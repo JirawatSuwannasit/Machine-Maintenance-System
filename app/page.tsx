@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   computeMachineStatus,
@@ -93,6 +94,47 @@ async function fetchDashboardData(): Promise<FetchResult> {
     breakdownMachineIds,
     dueDatesByMachine,
   };
+}
+
+// Reads ?saved=1 (set by MachineForm on redirect after a successful save),
+// shows a green toast, then strips the query param so a refresh doesn't
+// re-trigger it. useSearchParams() requires a Suspense boundary in the
+// App Router, so this is a separate component rather than inline in Home().
+function SavedToast() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get("saved") === "1") {
+      setVisible(true);
+      router.replace("/", { scroll: false });
+    }
+  }, [searchParams, router]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const timer = setTimeout(() => setVisible(false), 3000);
+    return () => clearTimeout(timer);
+  }, [visible]);
+
+  if (!visible) return null;
+
+  return (
+    <div className="fixed inset-x-4 top-16 z-[60] mx-auto max-w-sm rounded-md bg-green-600 px-4 py-3 text-center text-sm text-white shadow-lg md:left-1/2 md:right-auto md:top-4 md:-translate-x-1/2">
+      <div className="flex items-center justify-between gap-3">
+        <span>บันทึกเครื่องจักรแล้ว</span>
+        <button
+          type="button"
+          onClick={() => setVisible(false)}
+          className="text-white/80 hover:text-white"
+          aria-label="ปิด"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function LoadingSkeleton() {
@@ -240,6 +282,10 @@ export default function Home() {
 
   return (
     <div className="p-4">
+      <Suspense fallback={null}>
+        <SavedToast />
+      </Suspense>
+
       <h1 className="text-2xl font-bold">ภาพรวมเครื่องจักร</h1>
 
       {initialLoading ? (
