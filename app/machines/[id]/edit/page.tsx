@@ -12,6 +12,9 @@ type LoadState =
   | { status: "error"; message: string }
   | { status: "loaded"; machine: MachineRecord };
 
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export default function EditMachinePage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -21,10 +24,18 @@ export default function EditMachinePage() {
     let cancelled = false;
 
     async function loadMachine() {
+      // The route param is machines.id (a uuid), not machine_code. A
+      // technician visiting /machines/TS-04/edit by code instead of id
+      // must see a friendly empty state, not a raw Postgres cast error.
+      if (!UUID_REGEX.test(params.id)) {
+        setState({ status: "not-found" });
+        return;
+      }
+
       const { data, error } = await supabase
         .from("machines")
         .select(
-          "id, machine_code, machine_name, category, location, install_date, status"
+          "id, machine_code, machine_name, category, location, status, manufacturer, model, serial_no, purchase_date, install_date, warranty_expiry"
         )
         .eq("id", params.id)
         .maybeSingle();
@@ -32,7 +43,13 @@ export default function EditMachinePage() {
       if (cancelled) return;
 
       if (error) {
-        setState({ status: "error", message: error.message });
+        // PGRST116 = no rows found (only ever raised by .single(), but
+        // handled here too in case of a PostgREST version difference).
+        if (error.code === "PGRST116") {
+          setState({ status: "not-found" });
+        } else {
+          setState({ status: "error", message: error.message });
+        }
         return;
       }
       if (!data) {
@@ -69,9 +86,12 @@ export default function EditMachinePage() {
       )}
 
       {state.status === "not-found" && (
-        <div className="mt-6 text-center">
+        <div className="mt-10 flex flex-col items-center gap-4 text-center">
           <p className="text-primary/70">ไม่พบเครื่องจักรนี้</p>
-          <Link href="/" className="mt-3 inline-block text-accent underline">
+          <Link
+            href="/"
+            className="flex min-h-[44px] items-center justify-center rounded-md bg-accent px-6 text-sm font-medium text-white hover:bg-accent/90"
+          >
             กลับหน้าแรก
           </Link>
         </div>
