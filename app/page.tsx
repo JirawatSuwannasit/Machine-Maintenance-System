@@ -96,37 +96,47 @@ async function fetchDashboardData(): Promise<FetchResult> {
   };
 }
 
-// Reads ?saved=1 (set by MachineForm on redirect after a successful save),
-// shows a green toast, then strips the query param so a refresh doesn't
-// re-trigger it. useSearchParams() requires a Suspense boundary in the
-// App Router, so this is a separate component rather than inline in Home().
+// Maps ?saved=<key> to its toast message. "1" is the original MachineForm
+// save flow (kept for backwards compatibility); "breakdown" is used by
+// app/breakdowns/new/page.tsx.
+const SAVED_TOAST_MESSAGES: Record<string, string> = {
+  "1": "บันทึกเครื่องจักรแล้ว",
+  breakdown: "บันทึกใบแจ้งเสียแล้ว",
+};
+
+// Reads ?saved=<key>, shows a green toast with the matching message, then
+// strips the query param so a refresh doesn't re-trigger it.
+// useSearchParams() requires a Suspense boundary in the App Router, so
+// this is a separate component rather than inline in Home().
 function SavedToast() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [visible, setVisible] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (searchParams.get("saved") === "1") {
-      setVisible(true);
+    const savedKey = searchParams.get("saved");
+    const text = savedKey ? SAVED_TOAST_MESSAGES[savedKey] : undefined;
+    if (text) {
+      setMessage(text);
       router.replace("/", { scroll: false });
     }
   }, [searchParams, router]);
 
   useEffect(() => {
-    if (!visible) return;
-    const timer = setTimeout(() => setVisible(false), 3000);
+    if (!message) return;
+    const timer = setTimeout(() => setMessage(null), 3000);
     return () => clearTimeout(timer);
-  }, [visible]);
+  }, [message]);
 
-  if (!visible) return null;
+  if (!message) return null;
 
   return (
     <div className="fixed inset-x-4 top-16 z-[60] mx-auto max-w-sm rounded-md bg-green-600 px-4 py-3 text-center text-sm text-white shadow-lg md:left-1/2 md:right-auto md:top-4 md:-translate-x-1/2">
       <div className="flex items-center justify-between gap-3">
-        <span>บันทึกเครื่องจักรแล้ว</span>
+        <span>{message}</span>
         <button
           type="button"
-          onClick={() => setVisible(false)}
+          onClick={() => setMessage(null)}
           className="text-white/80 hover:text-white"
           aria-label="ปิด"
         >

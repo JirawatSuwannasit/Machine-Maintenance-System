@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Pencil, Printer } from "lucide-react";
+import { AlertTriangle, Pencil, Printer } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
   computeMachineStatus,
@@ -267,6 +267,13 @@ export default function MachineProfilePage() {
             </div>
 
             <div className="mt-4 flex flex-wrap gap-3">
+              <Link
+                href={`/breakdowns/new?machine=${state.machine.id}`}
+                className="flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700"
+              >
+                <AlertTriangle size={16} aria-hidden="true" />
+                <span>+ แจ้งเสีย</span>
+              </Link>
               <Link
                 href={`/machines/${state.machine.id}/edit`}
                 className="flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-accent px-4 text-sm font-medium text-white hover:bg-accent/90"
