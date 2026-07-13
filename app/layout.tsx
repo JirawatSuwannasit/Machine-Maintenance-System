@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import Nav from "@/components/Nav";
+import AppShell from "@/components/AppShell";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -20,8 +20,7 @@ export default function RootLayout({
   return (
     <html lang="th">
       <body className="bg-surface text-primary">
-        <Nav />
-        <main className="pb-[68px] md:pb-0 md:pl-60">{children}</main>
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );
