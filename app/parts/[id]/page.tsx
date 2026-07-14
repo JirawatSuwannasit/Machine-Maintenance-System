@@ -88,11 +88,63 @@ function LowStockBadge() {
   );
 }
 
+type ReplacementMachineRelation = { id: string; machine_code: string };
+type BreakdownRelation = { id: string; reported_at: string };
+
+type ReplacementHistoryEntry = {
+  id: string;
+  replaced_at: string;
+  replaced_by: string | null;
+  reason: string | null;
+  qty_used: number;
+  unit_cost: number | string;
+  total_cost: number | string;
+  machines: ReplacementMachineRelation | null;
+  breakdowns: BreakdownRelation | null;
+};
+
+type RawReplacementHistoryEntry = Omit<
+  ReplacementHistoryEntry,
+  "machines" | "breakdowns"
+> & {
+  machines: ReplacementMachineRelation | ReplacementMachineRelation[] | null;
+  breakdowns: BreakdownRelation | BreakdownRelation[] | null;
+};
+
+function normalizeReplacementMachineRelation(
+  machines: RawReplacementHistoryEntry["machines"]
+): ReplacementMachineRelation | null {
+  if (!machines) return null;
+  if (Array.isArray(machines)) return machines[0] ?? null;
+  return machines;
+}
+
+function normalizeBreakdownRelation(
+  breakdowns: RawReplacementHistoryEntry["breakdowns"]
+): BreakdownRelation | null {
+  if (!breakdowns) return null;
+  if (Array.isArray(breakdowns)) return breakdowns[0] ?? null;
+  return breakdowns;
+}
+
+const REPLACEMENT_HISTORY_SELECT =
+  "id, replaced_at, replaced_by, reason, qty_used, unit_cost, total_cost, machines(id, machine_code), breakdowns(id, reported_at)";
+
+const REASON_LABEL: Record<string, string> = {
+  planned: "ตามรอบ",
+  breakdown: "เครื่องเสีย",
+};
+
 type LoadState =
   | { status: "loading" }
   | { status: "not-found" }
   | { status: "error"; message: string }
-  | { status: "loaded"; part: SparePartDetail; links: MachineLinkRow[] };
+  | {
+      status: "loaded";
+      part: SparePartDetail;
+      links: MachineLinkRow[];
+      replacements: ReplacementHistoryEntry[];
+    };
 
 export default function PartDetailPage() {
   const params = useParams<{ id: string }>();
@@ -107,7 +159,7 @@ export default function PartDetailPage() {
         return;
       }
 
-      const [partRes, linksRes] = await Promise.all([
+      const [partRes, linksRes, replacementsRes] = await Promise.all([
         supabase
           .from("spare_parts")
           .select(
@@ -121,6 +173,12 @@ export default function PartDetailPage() {
             "id, lifespan_override_days, last_replaced_at, next_due_date, machines(id, machine_code, machine_name)"
           )
           .eq("part_id", params.id),
+        supabase
+          .from("part_replacements")
+          .select(REPLACEMENT_HISTORY_SELECT)
+          .eq("part_id", params.id)
+          .order("replaced_at", { ascending: false })
+          .order("created_at", { ascending: false }),
       ]);
 
       if (cancelled) return;
@@ -141,6 +199,10 @@ export default function PartDetailPage() {
         setState({ status: "error", message: linksRes.error.message });
         return;
       }
+      if (replacementsRes.error) {
+        setState({ status: "error", message: replacementsRes.error.message });
+        return;
+      }
 
       const links = ((linksRes.data ?? []) as RawMachineLinkRow[])
         .map((row) => ({
@@ -153,10 +215,19 @@ export default function PartDetailPage() {
           )
         );
 
+      const replacements = (
+        (replacementsRes.data ?? []) as RawReplacementHistoryEntry[]
+      ).map((row) => ({
+        ...row,
+        machines: normalizeReplacementMachineRelation(row.machines),
+        breakdowns: normalizeBreakdownRelation(row.breakdowns),
+      }));
+
       setState({
         status: "loaded",
         part: partRes.data as SparePartDetail,
         links,
+        replacements,
       });
     }
 
@@ -374,6 +445,177 @@ export default function PartDetailPage() {
                       </Link>
                     );
                   })}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Replacement history across all machines */}
+          <div className="mt-4">
+            <h2 className="text-lg font-bold text-primary">
+              ประวัติการเปลี่ยนอะไหล่นี้
+            </h2>
+
+            {state.replacements.length === 0 ? (
+              <p className="mt-6 py-4 text-center text-primary/70">
+                ยังไม่มีประวัติการเปลี่ยน
+              </p>
+            ) : (
+              <>
+                {/* Desktop table */}
+                <div className="mt-4 hidden overflow-x-auto md:block">
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b border-primary/10 text-left text-primary/60">
+                        <th className="py-2 pr-4 font-medium">วันที่</th>
+                        <th className="py-2 pr-4 font-medium">เครื่องจักร</th>
+                        <th className="py-2 pr-4 font-medium">ผู้เปลี่ยน</th>
+                        <th className="py-2 pr-4 font-medium">เหตุผล</th>
+                        <th className="py-2 pr-4 font-medium">จำนวน</th>
+                        <th className="py-2 pr-4 font-medium">ราคา/หน่วย</th>
+                        <th className="py-2 pr-4 font-medium">รวม</th>
+                        <th className="py-2 pr-4 font-medium">ใบแจ้งเสีย</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {state.replacements.map((entry) => (
+                        <tr
+                          key={entry.id}
+                          className="border-b border-primary/5 hover:bg-surface"
+                        >
+                          <td className="whitespace-nowrap py-3 pr-4 text-primary">
+                            {formatDateThai(entry.replaced_at)}
+                          </td>
+                          <td className="py-3 pr-4">
+                            <Link
+                              href={`/machines/${entry.machines?.id ?? ""}`}
+                              className="font-medium text-primary hover:underline"
+                            >
+                              {entry.machines?.machine_code ?? "-"}
+                            </Link>
+                          </td>
+                          <td className="py-3 pr-4 text-primary/70">
+                            {entry.replaced_by ?? "-"}
+                          </td>
+                          <td className="py-3 pr-4 text-primary/70">
+                            {entry.reason
+                              ? REASON_LABEL[entry.reason] ?? entry.reason
+                              : "-"}
+                          </td>
+                          <td className="whitespace-nowrap py-3 pr-4 text-primary/70">
+                            {entry.qty_used}
+                          </td>
+                          <td className="whitespace-nowrap py-3 pr-4 text-primary/70">
+                            {formatMoneyThai(entry.unit_cost)}
+                          </td>
+                          <td className="whitespace-nowrap py-3 pr-4 font-medium text-primary">
+                            {formatMoneyThai(entry.total_cost)}
+                          </td>
+                          <td className="whitespace-nowrap py-3 pr-4">
+                            {entry.breakdowns ? (
+                              <Link
+                                href={`/breakdowns/${entry.breakdowns.id}`}
+                                className="font-medium text-accent hover:underline"
+                              >
+                                {formatDateThai(
+                                  entry.breakdowns.reported_at.slice(0, 10)
+                                )}
+                              </Link>
+                            ) : (
+                              "-"
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-primary/20">
+                        <td
+                          colSpan={6}
+                          className="py-3 pr-4 text-right font-bold text-primary"
+                        >
+                          รวมทั้งหมด
+                        </td>
+                        <td className="whitespace-nowrap py-3 pr-4 font-bold text-primary">
+                          {formatMoneyThai(
+                            state.replacements.reduce(
+                              (sum, entry) =>
+                                sum +
+                                (typeof entry.total_cost === "string"
+                                  ? parseFloat(entry.total_cost)
+                                  : entry.total_cost),
+                              0
+                            )
+                          )}
+                        </td>
+                        <td />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Mobile cards */}
+                <div className="mt-4 space-y-3 md:hidden">
+                  {state.replacements.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="rounded-lg border border-primary/10 bg-white p-4 shadow-sm"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-primary">
+                            {formatDateThai(entry.replaced_at)}
+                          </p>
+                          <Link
+                            href={`/machines/${entry.machines?.id ?? ""}`}
+                            className="text-sm font-medium text-primary hover:underline"
+                          >
+                            {entry.machines?.machine_code ?? "-"}
+                          </Link>
+                        </div>
+                        <p className="text-right font-bold text-primary">
+                          {formatMoneyThai(entry.total_cost)}
+                        </p>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-primary/60">
+                        <span>ผู้เปลี่ยน: {entry.replaced_by ?? "-"}</span>
+                        <span>
+                          เหตุผล:{" "}
+                          {entry.reason
+                            ? REASON_LABEL[entry.reason] ?? entry.reason
+                            : "-"}
+                        </span>
+                        <span>จำนวน: {entry.qty_used}</span>
+                        <span>ราคา/หน่วย: {formatMoneyThai(entry.unit_cost)}</span>
+                        {entry.breakdowns ? (
+                          <Link
+                            href={`/breakdowns/${entry.breakdowns.id}`}
+                            className="font-medium text-accent hover:underline"
+                          >
+                            ใบแจ้งเสีย:{" "}
+                            {formatDateThai(
+                              entry.breakdowns.reported_at.slice(0, 10)
+                            )}
+                          </Link>
+                        ) : (
+                          <span>ใบแจ้งเสีย: -</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="rounded-lg border border-primary/10 bg-surface p-4 text-right text-sm font-bold text-primary">
+                    รวมทั้งหมด:{" "}
+                    {formatMoneyThai(
+                      state.replacements.reduce(
+                        (sum, entry) =>
+                          sum +
+                          (typeof entry.total_cost === "string"
+                            ? parseFloat(entry.total_cost)
+                            : entry.total_cost),
+                        0
+                      )
+                    )}
+                  </div>
                 </div>
               </>
             )}
