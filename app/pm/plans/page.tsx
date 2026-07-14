@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { DUE_SOON_DAYS } from "@/lib/machineStatus";
@@ -466,6 +467,14 @@ export default function PmPlansPage() {
                           </td>
                           <td className="py-3 pr-4">
                             <div className="flex flex-wrap gap-2">
+                              {plan.is_active && (
+                                <Link
+                                  href={`/pm/record?plan=${plan.id}`}
+                                  className="flex min-h-[44px] items-center justify-center whitespace-nowrap rounded-md bg-accent px-3 text-xs font-medium text-white hover:bg-accent/90"
+                                >
+                                  ทำ PM
+                                </Link>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => handleEditClick(plan)}
@@ -538,30 +547,40 @@ export default function PmPlansPage() {
                         <DueBadge nextDueDate={plan.next_due_date} />
                       </div>
 
-                      <div className="mt-3 flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleEditClick(plan)}
-                          className="flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-primary/20 px-3 text-xs font-medium text-primary hover:bg-primary/5"
-                        >
-                          แก้ไข
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleToggleActive(plan)}
-                          disabled={isToggling}
-                          className={`flex min-h-[44px] flex-1 items-center justify-center rounded-md border px-3 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-70 ${
-                            plan.is_active
-                              ? "border-red-300 text-red-700 hover:bg-red-50"
-                              : "border-green-300 text-green-700 hover:bg-green-50"
-                          }`}
-                        >
-                          {isToggling
-                            ? "กำลังบันทึก..."
-                            : plan.is_active
-                              ? "ปิดใช้งาน"
-                              : "เปิดใช้งาน"}
-                        </button>
+                      <div className="mt-3 space-y-2">
+                        {plan.is_active && (
+                          <Link
+                            href={`/pm/record?plan=${plan.id}`}
+                            className="flex min-h-[44px] items-center justify-center rounded-md bg-accent px-3 text-sm font-medium text-white hover:bg-accent/90"
+                          >
+                            ทำ PM
+                          </Link>
+                        )}
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleEditClick(plan)}
+                            className="flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-primary/20 px-3 text-xs font-medium text-primary hover:bg-primary/5"
+                          >
+                            แก้ไข
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleActive(plan)}
+                            disabled={isToggling}
+                            className={`flex min-h-[44px] flex-1 items-center justify-center rounded-md border px-3 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-70 ${
+                              plan.is_active
+                                ? "border-red-300 text-red-700 hover:bg-red-50"
+                                : "border-green-300 text-green-700 hover:bg-green-50"
+                            }`}
+                          >
+                            {isToggling
+                              ? "กำลังบันทึก..."
+                              : plan.is_active
+                                ? "ปิดใช้งาน"
+                                : "เปิดใช้งาน"}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );

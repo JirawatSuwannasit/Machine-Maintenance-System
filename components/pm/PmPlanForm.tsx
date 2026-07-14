@@ -26,7 +26,14 @@ type PmPlanFormProps = {
   onCancel: () => void;
 };
 
-const FREQUENCY_PRESETS = [30, 90, 180, 365];
+const FREQUENCY_PRESETS: Array<{ days: number; hint: string }> = [
+  { days: 30, hint: "รายเดือน" },
+  { days: 90, hint: "3 เดือน" },
+  { days: 180, hint: "6 เดือน" },
+  { days: 365, hint: "1 ปี" },
+  { days: 546, hint: "1.5 ปี" },
+  { days: 730, hint: "2 ปี" },
+];
 
 const inputClassName =
   "mt-1 block w-full min-h-[44px] rounded-md border border-primary/20 px-3 py-2 text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
@@ -211,16 +218,16 @@ export default function PmPlanForm({
         <div className="mt-2 flex flex-wrap gap-2">
           {FREQUENCY_PRESETS.map((preset) => (
             <button
-              key={preset}
+              key={preset.days}
               type="button"
-              onClick={() => setFrequencyDays(String(preset))}
+              onClick={() => setFrequencyDays(String(preset.days))}
               className={`min-h-[44px] rounded-md border px-3 text-xs font-medium ${
-                frequencyDays === String(preset)
+                frequencyDays === String(preset.days)
                   ? "border-accent bg-accent/10 text-accent"
                   : "border-primary/20 text-primary/70 hover:bg-primary/5"
               }`}
             >
-              {preset} วัน
+              {preset.days} วัน ({preset.hint})
             </button>
           ))}
         </div>
