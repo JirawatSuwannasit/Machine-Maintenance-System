@@ -281,15 +281,13 @@ export default function MachineProfilePage() {
                 <Pencil size={16} aria-hidden="true" />
                 <span>แก้ไข</span>
               </Link>
-              <button
-                type="button"
-                disabled
-                title="พร้อมใช้งานเร็วๆ นี้"
-                className="flex min-h-[44px] cursor-not-allowed items-center justify-center gap-2 rounded-md border border-primary/20 px-4 text-sm font-medium text-primary/40"
+              <Link
+                href={`/machines/${state.machine.id}/report`}
+                className="flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-primary/20 px-4 text-sm font-medium text-primary hover:bg-primary/5"
               >
                 <Printer size={16} aria-hidden="true" />
                 <span>พิมพ์รายงาน PDF</span>
-              </button>
+              </Link>
               <Link
                 href="/"
                 className="flex min-h-[44px] items-center justify-center rounded-md border border-primary/20 px-4 text-sm font-medium text-primary hover:bg-primary/5"
