@@ -287,12 +287,12 @@ function PmRecordPageInner() {
       <div className="p-4">
         <PageHeading />
         <div className="mt-10 flex flex-col items-center gap-4 text-center">
-          <p className="text-primary/70">ไม่พบแผน PM นี้</p>
+          <p className="text-primary/70">ไม่พบแผน PM ที่ต้องการบันทึก</p>
           <Link
             href="/pm/plans"
             className="flex min-h-[44px] items-center justify-center rounded-md bg-accent px-6 text-sm font-medium text-white hover:bg-accent/90"
           >
-            กลับหน้าแผน PM
+            ไปหน้าแผน PM
           </Link>
         </div>
       </div>

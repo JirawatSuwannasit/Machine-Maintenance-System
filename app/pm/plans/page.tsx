@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { DUE_SOON_DAYS } from "@/lib/machineStatus";
+import {
+  computeDueDiffDays,
+  computeDueDisplay,
+  formatDateThai,
+} from "@/lib/pmDueDate";
 import PmPlanForm, {
   type PmPlanMachineOption,
   type PmPlanRecord,
@@ -49,29 +53,18 @@ function normalizeChecklist(value: unknown): string[] {
 const PM_PLAN_SELECT =
   "id, machine_id, pm_name, frequency_days, checklist, last_done_date, next_due_date, is_active, machines(machine_code, machine_name)";
 
-// Parses a "YYYY-MM-DD" date string as a local-time calendar day, matching
-// lib/machineStatus.ts -- new Date("YYYY-MM-DD") parses as UTC midnight,
-// which can shift to the wrong day once converted to local time.
-function parseIsoDateAsLocalDay(isoDate: string): Date {
-  const [year, month, day] = isoDate.split("-").map(Number);
-  return new Date(year, month - 1, day);
-}
-
-function toLocalDayStart(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
 // Sort buckets: 0 = overdue, 1 = never done (next_due_date is null), 2 = upcoming.
-function dueBucket(nextDueDate: string | null, today: Date): number {
-  if (!nextDueDate) return 1;
-  return parseIsoDateAsLocalDay(nextDueDate) < today ? 0 : 2;
+function dueBucket(nextDueDate: string | null, referenceDate: Date): number {
+  const diffDays = computeDueDiffDays(nextDueDate, referenceDate);
+  if (diffDays === null) return 1;
+  return diffDays < 0 ? 0 : 2;
 }
 
 // Overdue plans first (soonest/most-overdue next_due_date first), then
 // never-done plans, then the rest (soonest upcoming first). Inactive plans
 // always sort after active ones, regardless of due date.
 function sortPlans(rows: PmPlanRow[]): PmPlanRow[] {
-  const today = toLocalDayStart(new Date());
+  const today = new Date();
   return [...rows].sort((a, b) => {
     if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
     const bucketDiff =
@@ -88,49 +81,12 @@ function sortPlans(rows: PmPlanRow[]): PmPlanRow[] {
   });
 }
 
-function formatDateThai(isoDate: string): string {
-  const [year, month, day] = isoDate.split("-");
-  return `${day}/${month}/${year}`;
-}
-
 function formatLastDone(lastDoneDate: string | null): string {
   return lastDoneDate ? formatDateThai(lastDoneDate) : "ยังไม่เคยทำ";
 }
 
 function formatFrequency(days: number): string {
   return `ทุก ${days} วัน`;
-}
-
-type DueDisplay = { label: string; className: string };
-
-function computeDueDisplay(nextDueDate: string | null): DueDisplay {
-  if (!nextDueDate) {
-    return {
-      label: "รอทำครั้งแรก",
-      className: "bg-gray-100 text-gray-700 border border-gray-200",
-    };
-  }
-
-  const today = toLocalDayStart(new Date());
-  const due = parseIsoDateAsLocalDay(nextDueDate);
-  const diffDays = Math.round((due.getTime() - today.getTime()) / 86400000);
-
-  if (diffDays < 0) {
-    return {
-      label: `เลยกำหนด ${Math.abs(diffDays)} วัน`,
-      className: "bg-red-100 text-red-800 border border-red-200",
-    };
-  }
-  if (diffDays <= DUE_SOON_DAYS) {
-    return {
-      label: `อีก ${diffDays} วัน`,
-      className: "bg-yellow-100 text-yellow-800 border border-yellow-200",
-    };
-  }
-  return {
-    label: formatDateThai(nextDueDate),
-    className: "bg-green-100 text-green-800 border border-green-200",
-  };
 }
 
 function DueBadge({ nextDueDate }: { nextDueDate: string | null }) {
