@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { supabase } from "@/lib/supabase";
+import PartsUsedEditor, {
+  type LinkedPart,
+  type PartLine,
+} from "@/components/breakdowns/PartsUsedEditor";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -112,6 +116,79 @@ function computeDefaultDowntimeMinutes(reportedAtIso: string): number {
   return diffMinutes > 0 ? diffMinutes : 0;
 }
 
+function coerceNumber(value: number | string): number {
+  const num = typeof value === "string" ? parseFloat(value) : value;
+  return Number.isFinite(num) ? num : 0;
+}
+
+function todayIsoDate(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+type SparePartRelation = {
+  part_code: string;
+  part_name: string;
+  unit_cost: number | string;
+  stock_qty: number;
+};
+
+// Same defensive pattern as the machine relation above: a to-one FK
+// (machine_parts.part_id -> spare_parts.id) still comes back as an array
+// from postgrest-js without generated Database types.
+type RawLinkedPartRow = {
+  part_id: string;
+  spare_parts: SparePartRelation | SparePartRelation[] | null;
+};
+
+function normalizeSparePartRelation(
+  spareParts: SparePartRelation | SparePartRelation[] | null
+): SparePartRelation | null {
+  if (!spareParts) return null;
+  if (Array.isArray(spareParts)) return spareParts[0] ?? null;
+  return spareParts;
+}
+
+// This machine's already-linked parts, for the close-out form's parts
+// editor. Scope decided with the product owner: only parts already linked
+// via machine_parts are selectable here (not the full spare_parts catalog).
+async function fetchLinkedParts(machineId: string): Promise<LinkedPart[]> {
+  const { data, error } = await supabase
+    .from("machine_parts")
+    .select("part_id, spare_parts(part_code, part_name, unit_cost, stock_qty)")
+    .eq("machine_id", machineId);
+
+  if (error || !data) return [];
+
+  const result: LinkedPart[] = [];
+  for (const row of data as RawLinkedPartRow[]) {
+    const part = normalizeSparePartRelation(row.spare_parts);
+    if (!part) continue;
+    result.push({
+      part_id: row.part_id,
+      part_code: part.part_code,
+      part_name: part.part_name,
+      unit_cost: coerceNumber(part.unit_cost),
+      stock_qty: part.stock_qty,
+    });
+  }
+  return result;
+}
+
+// Only the "no part selected" case is mandated by the spec; the qty/cost
+// checks are the same defensive validation app/parts/replace/page.tsx
+// already applies to the same two fields, reused here so a blank/negative
+// value can never reach the insert.
+function validatePartLine(line: PartLine): string | null {
+  if (line.partId === "") return "กรุณาเลือกอะไหล่ หรือ ลบรายการนี้";
+  const qty = line.qtyUsed === "" ? NaN : Number(line.qtyUsed);
+  if (!Number.isFinite(qty) || qty < 1) return "กรุณาระบุจำนวนอย่างน้อย 1 ชิ้น";
+  const cost = line.unitCost === "" ? NaN : Number(line.unitCost);
+  if (!Number.isFinite(cost) || cost < 0) return "ราคาต่อหน่วยต้องไม่ติดลบ";
+  return null;
+}
+
 const inputClassName =
   "mt-1 block w-full min-h-[44px] rounded-md border border-primary/20 px-3 py-2 text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
@@ -119,7 +196,12 @@ type LoadState =
   | { status: "loading" }
   | { status: "not-found" }
   | { status: "error"; message: string }
-  | { status: "loaded"; breakdown: BreakdownDetail; partsCost: number };
+  | {
+      status: "loaded";
+      breakdown: BreakdownDetail;
+      partsCost: number;
+      linkedParts: LinkedPart[];
+    };
 
 async function fetchPartsCost(breakdownId: string): Promise<number> {
   const { data } = await supabase
@@ -165,6 +247,12 @@ export default function BreakdownDetailPage() {
   const [closing, setClosing] = useState(false);
   const [showCloseSuccess, setShowCloseSuccess] = useState(false);
 
+  const [partLines, setPartLines] = useState<PartLine[]>([]);
+  const [lineErrors, setLineErrors] = useState<Record<string, string>>({});
+  const [partsInsertWarning, setPartsInsertWarning] = useState<string | null>(
+    null
+  );
+
   useEffect(() => {
     let cancelled = false;
 
@@ -202,6 +290,9 @@ export default function BreakdownDetailPage() {
         breakdownRes.data as unknown as RawBreakdownDetail
       );
 
+      const linkedParts = await fetchLinkedParts(breakdown.machine_id);
+      if (cancelled) return;
+
       setReporterSnapshot(breakdown.technician);
       setCause(breakdown.cause ?? "");
       setActionTaken(breakdown.action_taken ?? "");
@@ -217,7 +308,7 @@ export default function BreakdownDetailPage() {
       );
       setCloseTechnician(breakdown.technician ?? "");
 
-      setState({ status: "loaded", breakdown, partsCost });
+      setState({ status: "loaded", breakdown, partsCost, linkedParts });
     }
 
     loadBreakdown();
@@ -252,7 +343,12 @@ export default function BreakdownDetailPage() {
     }
 
     const updated = normalizeBreakdown(data as unknown as RawBreakdownDetail);
-    setState({ status: "loaded", breakdown: updated, partsCost: state.partsCost });
+    setState({
+      status: "loaded",
+      breakdown: updated,
+      partsCost: state.partsCost,
+      linkedParts: state.linkedParts,
+    });
     setDowntimeMinutes(computeDefaultDowntimeMinutes(updated.reported_at));
     setCloseTechnician(updated.technician ?? "");
     setAcceptingJob(false);
@@ -297,10 +393,22 @@ export default function BreakdownDetailPage() {
       setCloseFormError(null);
     }
 
+    const newLineErrors: Record<string, string> = {};
+    for (const line of partLines) {
+      const message = validatePartLine(line);
+      if (message) {
+        newLineErrors[line.key] = message;
+        hasError = true;
+      }
+    }
+    setLineErrors(newLineErrors);
+
     if (hasError) return;
 
     setClosing(true);
     setCloseFormError(null);
+
+    const trimmedCloseTechnician = closeTechnician.trim();
 
     const { data, error } = await supabase
       .from("breakdowns")
@@ -311,7 +419,7 @@ export default function BreakdownDetailPage() {
         action_taken: trimmedActionTaken,
         downtime_minutes: downtimeValue,
         repair_cost: repairCostValue,
-        technician: closeTechnician.trim() === "" ? null : closeTechnician.trim(),
+        technician: trimmedCloseTechnician === "" ? null : trimmedCloseTechnician,
       })
       .eq("id", state.breakdown.id)
       .select(BREAKDOWN_SELECT)
@@ -324,11 +432,57 @@ export default function BreakdownDetailPage() {
     }
 
     const updated = normalizeBreakdown(data as unknown as RawBreakdownDetail);
+
+    // Insert only -- trg_part_replacements_after_insert (supabase/migrations/
+    // 001_init.sql) owns machine_parts.last_replaced_at/next_due_date and
+    // decrements spare_parts.stock_qty automatically. total_cost is a
+    // GENERATED STORED column computed by Postgres; never send it. This is
+    // the same insert shape app/parts/replace/page.tsx (MMS-016) uses --
+    // reused here rather than reinvented.
+    let partsInsertErrorMessage: string | null = null;
+    if (partLines.length > 0) {
+      const rows = partLines.map((line) => ({
+        part_id: line.partId,
+        machine_id: updated.machine_id,
+        replaced_at: todayIsoDate(),
+        replaced_by: trimmedCloseTechnician === "" ? null : trimmedCloseTechnician,
+        reason: "breakdown",
+        qty_used: Math.trunc(Number(line.qtyUsed)),
+        unit_cost: Number(line.unitCost),
+        breakdown_id: updated.id,
+        notes: null,
+      }));
+
+      // The JS client has no cross-statement DB transaction, so this insert
+      // cannot be bundled atomically with the breakdown UPDATE above. If the
+      // breakdown closed but this insert fails, that is surfaced honestly
+      // below rather than pretending the parts saved.
+      const { error: partsError } = await supabase
+        .from("part_replacements")
+        .insert(rows);
+
+      if (partsError) {
+        partsInsertErrorMessage = partsError.message;
+      }
+    }
+
     const partsCost = await fetchPartsCost(state.breakdown.id);
 
-    setState({ status: "loaded", breakdown: updated, partsCost });
+    setState({
+      status: "loaded",
+      breakdown: updated,
+      partsCost,
+      linkedParts: state.linkedParts,
+    });
     setClosing(false);
-    setShowCloseSuccess(true);
+
+    if (partsInsertErrorMessage) {
+      setPartsInsertWarning(
+        `ปิดงานสำเร็จแล้ว แต่บันทึกอะไหล่ไม่สำเร็จ: ${partsInsertErrorMessage} — กรุณาไปบันทึกอะไหล่ที่ตกหล่นผ่านหน้า "บันทึกเปลี่ยนอะไหล่" (/parts/replace) ภายหลัง`
+      );
+    } else {
+      setShowCloseSuccess(true);
+    }
   }
 
   useEffect(() => {
@@ -378,6 +532,20 @@ export default function BreakdownDetailPage() {
                 type="button"
                 onClick={() => setShowCloseSuccess(false)}
                 className="text-green-700/70 hover:text-green-900"
+                aria-label="ปิด"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {partsInsertWarning && (
+            <div className="mb-4 flex items-start justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <span>{partsInsertWarning}</span>
+              <button
+                type="button"
+                onClick={() => setPartsInsertWarning(null)}
+                className="shrink-0 text-amber-700/70 hover:text-amber-900"
                 aria-label="ปิด"
               >
                 ✕
@@ -598,6 +766,13 @@ export default function BreakdownDetailPage() {
                 />
               </div>
 
+              <PartsUsedEditor
+                linkedParts={state.linkedParts}
+                lines={partLines}
+                onChange={setPartLines}
+                lineErrors={lineErrors}
+              />
+
               {closeFormError && (
                 <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">
                   {closeFormError}
@@ -663,8 +838,10 @@ export default function BreakdownDetailPage() {
                     {formatMoneyThai(state.breakdown.repair_cost)}
                   </span>
                 </div>
-                {/* part cost is legitimately 0 until MMS-016 ships the
-                    part-replacement form that creates part_replacements rows */}
+                {/* Sums part_replacements rows for this breakdown_id -- these
+                    come either from the close-out parts editor above or
+                    from the standalone /parts/replace form (MMS-016), so
+                    this is legitimately 0 whenever neither path was used. */}
                 <div className="mt-1 flex justify-between text-sm">
                   <span className="text-primary/70">ค่าอะไหล่</span>
                   <span className="text-right tabular-nums text-primary">
