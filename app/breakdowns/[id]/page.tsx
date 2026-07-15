@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
+import { Pencil } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import PartsUsedEditor, {
   type LinkedPart,
@@ -189,6 +190,137 @@ function validatePartLine(line: PartLine): string | null {
   return null;
 }
 
+type ExistingPartsResult = {
+  lines: PartLine[];
+  // Parts referenced by these rows but no longer present in machine_parts
+  // (e.g. unlinked from the machine after being used) -- merged into
+  // linkedParts so the reopened editor can still display/select them on
+  // their existing line, not just silently blank the dropdown out.
+  extraLinkedParts: LinkedPart[];
+};
+
+type RawExistingPartRow = {
+  id: string;
+  part_id: string;
+  qty_used: number;
+  unit_cost: number | string;
+  spare_parts: SparePartRelation | SparePartRelation[] | null;
+};
+
+// This breakdown's already-logged parts (from a prior close -- MMS-022 Fix
+// #3 or an earlier reopen-and-reclose cycle), for prefilling the reopened
+// close-out form's parts editor with existing lines (MMS-024 Part B).
+async function fetchExistingPartLines(
+  breakdownId: string
+): Promise<ExistingPartsResult> {
+  const { data, error } = await supabase
+    .from("part_replacements")
+    .select(
+      "id, part_id, qty_used, unit_cost, spare_parts(part_code, part_name, unit_cost, stock_qty)"
+    )
+    .eq("breakdown_id", breakdownId)
+    .order("created_at", { ascending: true });
+
+  if (error || !data) return { lines: [], extraLinkedParts: [] };
+
+  const lines: PartLine[] = [];
+  const extraLinkedParts: LinkedPart[] = [];
+  const seenPartIds = new Set<string>();
+
+  for (const row of data as RawExistingPartRow[]) {
+    lines.push({
+      key: `existing-${row.id}`,
+      id: row.id,
+      partId: row.part_id,
+      qtyUsed: row.qty_used,
+      unitCost: coerceNumber(row.unit_cost),
+    });
+
+    if (!seenPartIds.has(row.part_id)) {
+      seenPartIds.add(row.part_id);
+      const part = normalizeSparePartRelation(row.spare_parts);
+      if (part) {
+        extraLinkedParts.push({
+          part_id: row.part_id,
+          part_code: part.part_code,
+          part_name: part.part_name,
+          unit_cost: coerceNumber(part.unit_cost),
+          stock_qty: part.stock_qty,
+        });
+      }
+    }
+  }
+
+  return { lines, extraLinkedParts };
+}
+
+// Prefers the machine_parts-derived entry (live stock_qty/unit_cost) over a
+// historical spare_parts snapshot when a part_id appears in both.
+function mergeLinkedParts(
+  base: LinkedPart[],
+  extras: LinkedPart[]
+): LinkedPart[] {
+  const byId = new Map(base.map((part) => [part.part_id, part]));
+  for (const extra of extras) {
+    if (!byId.has(extra.part_id)) {
+      byId.set(extra.part_id, extra);
+    }
+  }
+  return Array.from(byId.values());
+}
+
+type PartsDiff = {
+  idsToDelete: string[];
+  linesToInsert: PartLine[];
+};
+
+// Compares the editor's current lines against the lines that were present
+// when the close-out form was opened (fresh accept, or a reopen -- MMS-024
+// Part B) to produce the minimal set of DELETE/INSERT operations. There is
+// no UPDATE trigger on part_replacements, so ANY change to an existing
+// line -- a different part, qty, or unit cost -- is committed as DELETE
+// the old row + INSERT a new one, never an UPDATE.
+function computePartsDiff(original: PartLine[], current: PartLine[]): PartsDiff {
+  const currentIds = new Set(
+    current.filter((line) => line.id !== null).map((line) => line.id as string)
+  );
+  const originalById = new Map(
+    original
+      .filter((line) => line.id !== null)
+      .map((line) => [line.id as string, line])
+  );
+
+  const idsToDelete: string[] = [];
+  const linesToInsert: PartLine[] = [];
+
+  // Removed: an original line no longer present in the current editor.
+  for (const line of original) {
+    if (line.id !== null && !currentIds.has(line.id)) {
+      idsToDelete.push(line.id);
+    }
+  }
+
+  // Added / changed: walk the current lines.
+  for (const line of current) {
+    if (line.id === null) {
+      linesToInsert.push(line);
+      continue;
+    }
+    const originalLine = originalById.get(line.id);
+    if (!originalLine) continue;
+    const changed =
+      line.partId !== originalLine.partId ||
+      line.qtyUsed !== originalLine.qtyUsed ||
+      line.unitCost !== originalLine.unitCost;
+    if (changed) {
+      idsToDelete.push(line.id);
+      linesToInsert.push({ ...line, id: null });
+    }
+  }
+
+  return { idsToDelete, linesToInsert };
+}
+
 const inputClassName =
   "mt-1 block w-full min-h-[44px] rounded-md border border-primary/20 px-3 py-2 text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
@@ -248,10 +380,16 @@ export default function BreakdownDetailPage() {
   const [showCloseSuccess, setShowCloseSuccess] = useState(false);
 
   const [partLines, setPartLines] = useState<PartLine[]>([]);
+  // Snapshot of the lines as loaded (fresh accept = [], reopen = whatever
+  // was already logged) -- the baseline computePartsDiff compares against.
+  const [originalPartLines, setOriginalPartLines] = useState<PartLine[]>([]);
   const [lineErrors, setLineErrors] = useState<Record<string, string>>({});
   const [partsInsertWarning, setPartsInsertWarning] = useState<string | null>(
     null
   );
+
+  const [reopening, setReopening] = useState(false);
+  const [reopenNotice, setReopenNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -290,8 +428,16 @@ export default function BreakdownDetailPage() {
         breakdownRes.data as unknown as RawBreakdownDetail
       );
 
-      const linkedParts = await fetchLinkedParts(breakdown.machine_id);
+      const [linkedPartsFromMachine, existingParts] = await Promise.all([
+        fetchLinkedParts(breakdown.machine_id),
+        fetchExistingPartLines(breakdown.id),
+      ]);
       if (cancelled) return;
+
+      const linkedParts = mergeLinkedParts(
+        linkedPartsFromMachine,
+        existingParts.extraLinkedParts
+      );
 
       setReporterSnapshot(breakdown.technician);
       setCause(breakdown.cause ?? "");
@@ -307,6 +453,8 @@ export default function BreakdownDetailPage() {
           : 0
       );
       setCloseTechnician(breakdown.technician ?? "");
+      setPartLines(existingParts.lines);
+      setOriginalPartLines(existingParts.lines);
 
       setState({ status: "loaded", breakdown, partsCost, linkedParts });
     }
@@ -433,15 +581,40 @@ export default function BreakdownDetailPage() {
 
     const updated = normalizeBreakdown(data as unknown as RawBreakdownDetail);
 
-    // Insert only -- trg_part_replacements_after_insert (supabase/migrations/
-    // 001_init.sql) owns machine_parts.last_replaced_at/next_due_date and
-    // decrements spare_parts.stock_qty automatically. total_cost is a
-    // GENERATED STORED column computed by Postgres; never send it. This is
-    // the same insert shape app/parts/replace/page.tsx (MMS-016) uses --
-    // reused here rather than reinvented.
-    let partsInsertErrorMessage: string | null = null;
-    if (partLines.length > 0) {
-      const rows = partLines.map((line) => ({
+    // Insert-shape only ever holds part_id, machine_id, replaced_at (today
+    // -- the date of THIS close/re-close action), replaced_by, reason,
+    // qty_used, unit_cost, breakdown_id, notes. total_cost is a GENERATED
+    // STORED column; never send it. Same shape app/parts/replace/page.tsx
+    // (MMS-016) and MMS-022 Fix #3 already use.
+    //
+    // There is no UPDATE trigger on part_replacements, so an edited line is
+    // committed as DELETE-old + INSERT-new (see computePartsDiff). DELETEs
+    // (removed + changed) run BEFORE INSERTs (added + changed) so stock
+    // math is always correct: the DELETE trigger (Part A, supabase/
+    // migrations/003_part_replacement_delete_trigger.sql) restores the old
+    // qty to stock before the new qty is decremented, so stock is never
+    // transiently double-counted. If the delete step fails, the insert
+    // step is skipped entirely -- inserting a "changed" line's new row
+    // without its old row having actually been deleted would double-
+    // decrement stock. This UI must never write stock_qty or machine_parts
+    // dates directly; both triggers own those.
+    const { idsToDelete, linesToInsert } = computePartsDiff(
+      originalPartLines,
+      partLines
+    );
+
+    let partsErrorMessage: string | null = null;
+
+    if (idsToDelete.length > 0) {
+      const { error: deleteError } = await supabase
+        .from("part_replacements")
+        .delete()
+        .in("id", idsToDelete);
+      if (deleteError) partsErrorMessage = deleteError.message;
+    }
+
+    if (!partsErrorMessage && linesToInsert.length > 0) {
+      const rows = linesToInsert.map((line) => ({
         part_id: line.partId,
         machine_id: updated.machine_id,
         replaced_at: todayIsoDate(),
@@ -453,20 +626,28 @@ export default function BreakdownDetailPage() {
         notes: null,
       }));
 
-      // The JS client has no cross-statement DB transaction, so this insert
-      // cannot be bundled atomically with the breakdown UPDATE above. If the
-      // breakdown closed but this insert fails, that is surfaced honestly
-      // below rather than pretending the parts saved.
-      const { error: partsError } = await supabase
+      // The JS client has no cross-statement DB transaction, so this
+      // cannot be bundled atomically with the breakdown UPDATE above or
+      // the DELETEs above. If the breakdown closed but this fails partway,
+      // that is surfaced honestly below rather than pretending it saved.
+      const { error: insertError } = await supabase
         .from("part_replacements")
         .insert(rows);
 
-      if (partsError) {
-        partsInsertErrorMessage = partsError.message;
-      }
+      if (insertError) partsErrorMessage = insertError.message;
     }
 
-    const partsCost = await fetchPartsCost(state.breakdown.id);
+    // Re-read the true current state of this breakdown's parts regardless
+    // of the outcome above, so a same-session reopen right after this
+    // always starts from what is actually in the database, not from
+    // stale local state.
+    const [partsCost, refreshedExistingParts] = await Promise.all([
+      fetchPartsCost(state.breakdown.id),
+      fetchExistingPartLines(state.breakdown.id),
+    ]);
+
+    setPartLines(refreshedExistingParts.lines);
+    setOriginalPartLines(refreshedExistingParts.lines);
 
     setState({
       status: "loaded",
@@ -476,13 +657,88 @@ export default function BreakdownDetailPage() {
     });
     setClosing(false);
 
-    if (partsInsertErrorMessage) {
+    if (partsErrorMessage) {
       setPartsInsertWarning(
-        `ปิดงานสำเร็จแล้ว แต่บันทึกอะไหล่ไม่สำเร็จ: ${partsInsertErrorMessage} — กรุณาไปบันทึกอะไหล่ที่ตกหล่นผ่านหน้า "บันทึกเปลี่ยนอะไหล่" (/parts/replace) ภายหลัง`
+        `ปิดงานสำเร็จแล้ว แต่การบันทึกอะไหล่บางส่วนไม่สำเร็จ: ${partsErrorMessage} — ใบงานอาจถูกบันทึกไม่ครบถ้วน กรุณาเปิดใบงานนี้อีกครั้ง ("แก้ไขใบงาน") เพื่อตรวจสอบและแก้ไขรายการอะไหล่ให้ถูกต้อง`
       );
     } else {
       setShowCloseSuccess(true);
     }
+  }
+
+  async function handleReopenClick() {
+    if (state.status !== "loaded") return;
+
+    const confirmed = window.confirm(
+      "เปิดใบงานนี้เพื่อแก้ไข? สถานะจะกลับเป็น 'กำลังซ่อม' จนกว่าจะปิดงานอีกครั้ง"
+    );
+    if (!confirmed) return;
+
+    setReopening(true);
+    setReopenNotice(null);
+    setShowCloseSuccess(false);
+
+    // Guard against a race: only reopen if the row is still 'closed'
+    // server-side. If another user (or tab) already reopened it, this
+    // UPDATE matches zero rows -- that is a no-op with a Thai notice, not
+    // an error.
+    const { data, error } = await supabase
+      .from("breakdowns")
+      .update({ status: "in_progress", closed_at: null })
+      .eq("id", state.breakdown.id)
+      .eq("status", "closed")
+      .select(BREAKDOWN_SELECT)
+      .maybeSingle();
+
+    if (error) {
+      setReopenNotice(error.message);
+      setReopening(false);
+      return;
+    }
+
+    if (!data) {
+      const fresh = await supabase
+        .from("breakdowns")
+        .select(BREAKDOWN_SELECT)
+        .eq("id", state.breakdown.id)
+        .maybeSingle();
+
+      if (fresh.data) {
+        const freshBreakdown = normalizeBreakdown(
+          fresh.data as unknown as RawBreakdownDetail
+        );
+        setState({
+          status: "loaded",
+          breakdown: freshBreakdown,
+          partsCost: state.partsCost,
+          linkedParts: state.linkedParts,
+        });
+      }
+      setReopenNotice(
+        "ใบงานนี้ไม่ใช่สถานะ 'ปิดงานแล้ว' อีกต่อไป (อาจถูกเปิดแก้ไขไปแล้วโดยผู้อื่นหรือแท็บอื่น) ระบบได้อัปเดตหน้าจอเป็นสถานะล่าสุดให้แล้ว"
+      );
+      setReopening(false);
+      return;
+    }
+
+    // cause/action_taken/downtime/repair_cost/technician and the parts
+    // editor's lines are already correctly populated from the initial
+    // load's loadBreakdown() effect (it prefills them regardless of
+    // status), so reopening only needs to flip the breakdown's own status.
+    setCauseError(null);
+    setActionTakenError(null);
+    setDowntimeError(null);
+    setCloseFormError(null);
+    setLineErrors({});
+
+    const updated = normalizeBreakdown(data as unknown as RawBreakdownDetail);
+    setState({
+      status: "loaded",
+      breakdown: updated,
+      partsCost: state.partsCost,
+      linkedParts: state.linkedParts,
+    });
+    setReopening(false);
   }
 
   useEffect(() => {
@@ -545,6 +801,20 @@ export default function BreakdownDetailPage() {
               <button
                 type="button"
                 onClick={() => setPartsInsertWarning(null)}
+                className="shrink-0 text-amber-700/70 hover:text-amber-900"
+                aria-label="ปิด"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {reopenNotice && (
+            <div className="mb-4 flex items-start justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <span>{reopenNotice}</span>
+              <button
+                type="button"
+                onClick={() => setReopenNotice(null)}
                 className="shrink-0 text-amber-700/70 hover:text-amber-900"
                 aria-label="ปิด"
               >
@@ -792,6 +1062,16 @@ export default function BreakdownDetailPage() {
           {/* View C: closed -> read-only summary */}
           {state.breakdown.status === "closed" && (
             <div className="mt-4 space-y-4">
+              <button
+                type="button"
+                onClick={handleReopenClick}
+                disabled={reopening}
+                className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-md border border-primary/20 px-4 text-sm font-medium text-primary hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                <Pencil size={16} aria-hidden="true" />
+                <span>{reopening ? "กำลังเปิดใบงาน..." : "แก้ไขใบงาน"}</span>
+              </button>
+
               <div className="rounded-lg border border-primary/10 bg-white p-4">
                 <dl className="space-y-2 text-sm">
                   <div>

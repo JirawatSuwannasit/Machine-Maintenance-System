@@ -13,6 +13,11 @@ export type LinkedPart = {
 
 export type PartLine = {
   key: string;
+  // The part_replacements.id this line was loaded from, or null for a
+  // brand-new line the user just added. The page component uses this to
+  // diff against the originally-loaded lines on save (MMS-024 Part B) --
+  // never mutated by this component itself.
+  id: string | null;
   partId: string;
   qtyUsed: number | "";
   unitCost: number | "";
@@ -50,7 +55,13 @@ export default function PartsUsedEditor({
     nextKeyRef.current += 1;
     onChange([
       ...lines,
-      { key: `line-${nextKeyRef.current}`, partId: "", qtyUsed: 1, unitCost: 0 },
+      {
+        key: `line-${nextKeyRef.current}`,
+        id: null,
+        partId: "",
+        qtyUsed: 1,
+        unitCost: 0,
+      },
     ]);
   }
 
@@ -127,6 +138,11 @@ export default function PartsUsedEditor({
                   >
                     <div className="flex items-start gap-2">
                       <div className="min-w-0 flex-1 space-y-2">
+                        {line.id !== null && (
+                          <span className="inline-flex w-fit items-center whitespace-nowrap rounded-full border border-primary/10 bg-white px-2 py-0.5 text-xs text-primary/50">
+                            บันทึกแล้ว
+                          </span>
+                        )}
                         <select
                           value={line.partId}
                           onChange={(event) =>
