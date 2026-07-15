@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
-import { Pencil } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import PartsUsedEditor, {
   type LinkedPart,
@@ -349,6 +349,7 @@ async function fetchPartsCost(breakdownId: string): Promise<number> {
 
 export default function BreakdownDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const [state, setState] = useState<LoadState>({ status: "loading" });
 
   // The technician value "as captured at report time" -- frozen once on
@@ -363,6 +364,9 @@ export default function BreakdownDetailPage() {
   const [acceptTechnician, setAcceptTechnician] = useState("");
   const [acceptError, setAcceptError] = useState<string | null>(null);
   const [acceptSubmitting, setAcceptSubmitting] = useState(false);
+
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const [cause, setCause] = useState("");
   const [actionTaken, setActionTaken] = useState("");
@@ -666,6 +670,48 @@ export default function BreakdownDetailPage() {
     }
   }
 
+  async function handleCancelBreakdown() {
+    if (state.status !== "loaded") return;
+
+    const confirmed = window.confirm(
+      "ยกเลิกใบแจ้งเสียนี้? การกระทำนี้จะลบถาวรและกู้คืนไม่ได้"
+    );
+    if (!confirmed) return;
+
+    setCancelling(true);
+    setCancelError(null);
+
+    // Guard against a race: only delete if the row is still 'open' server-
+    // side (mirrors the reopen race guard below) -- never delete a job
+    // someone else has since accepted.
+    const { data, error } = await supabase
+      .from("breakdowns")
+      .delete()
+      .eq("id", state.breakdown.id)
+      .eq("status", "open")
+      .select("id");
+
+    if (error) {
+      setCancelError(error.message);
+      setCancelling(false);
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      setCancelError(
+        "ใบแจ้งเสียนี้ถูกรับงานไปแล้วระหว่างที่ดำเนินการ ไม่สามารถยกเลิกได้ กรุณารีเฟรชหน้านี้เพื่อดูสถานะล่าสุด"
+      );
+      setCancelling(false);
+      return;
+    }
+
+    // The row is gone, so the machine's light returns to GREEN on its own
+    // (client-side recompute elsewhere) if this was its last open work
+    // order -- nothing further to update here.
+    router.push("/breakdowns");
+    router.refresh();
+  }
+
   async function handleReopenClick() {
     if (state.status !== "loaded") return;
 
@@ -866,7 +912,36 @@ export default function BreakdownDetailPage() {
 
           {/* View A: open -> accept the job */}
           {state.breakdown.status === "open" && (
-            <div className="mt-4">
+            <div className="mt-4 space-y-4">
+              {!acceptingJob && (
+                <div className="flex gap-3">
+                  <Link
+                    href={`/breakdowns/${state.breakdown.id}/edit`}
+                    className="flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-md border border-primary/20 px-4 text-sm font-medium text-primary hover:bg-primary/5"
+                  >
+                    <Pencil size={16} aria-hidden="true" />
+                    <span>แก้ไข</span>
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={handleCancelBreakdown}
+                    disabled={cancelling}
+                    className="flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-md border border-red-300 px-4 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    <Trash2 size={16} aria-hidden="true" />
+                    <span>
+                      {cancelling ? "กำลังยกเลิก..." : "ยกเลิกใบแจ้งเสีย"}
+                    </span>
+                  </button>
+                </div>
+              )}
+
+              {cancelError && (
+                <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+                  {cancelError}
+                </div>
+              )}
+
               {!acceptingJob ? (
                 <button
                   type="button"
