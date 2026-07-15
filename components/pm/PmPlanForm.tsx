@@ -10,6 +10,7 @@ export type PmPlanRecord = {
   pm_name: string;
   frequency_days: number;
   checklist: string[];
+  last_done_date: string | null;
 };
 
 export type PmPlanMachineOption = {
@@ -37,6 +38,19 @@ const FREQUENCY_PRESETS: Array<{ days: number; hint: string }> = [
 
 const inputClassName =
   "mt-1 block w-full min-h-[44px] rounded-md border border-primary/20 px-3 py-2 text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
+
+// Adds `days` calendar days to a "YYYY-MM-DD" string and returns a
+// "YYYY-MM-DD" string, mirroring the plain calendar-day arithmetic
+// trg_pm_records_after_insert performs in SQL
+// ((done_date + (frequency_days || ' days')::interval)::date) --
+// day-granularity only, no time-of-day/timezone component involved.
+function addDaysToIsoDate(isoDate: string, days: number): string {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() + days);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
 
 // New PM work should only be scheduled on machines currently in service, so
 // the dropdown only offers status = 'active' machines. If an existing plan's
@@ -134,15 +148,36 @@ export default function PmPlanForm({
     setSubmitting(true);
     setFormError(null);
 
-    // last_done_date and next_due_date are owned by trg_pm_records_after_insert
-    // (supabase/migrations/001_init.sql): it stamps them only when a
-    // pm_record is inserted. A brand-new or never-completed plan correctly
-    // has both as NULL -- this form must never write to these two columns.
+    const truncatedFrequency = Math.trunc(parsedFrequency);
+
+    // last_done_date is owned by trg_pm_records_after_insert
+    // (supabase/migrations/001_init.sql): it stamps it only when a
+    // pm_record is inserted. This form must never write to it.
+    //
+    // next_due_date is normally owned by that same trigger, but the trigger
+    // only fires on pm_records insert -- it never reacts to a plan's
+    // frequency_days being edited (MMS-022 bug fix #2). So when the user
+    // changes frequency_days on an existing plan, this is a deliberate,
+    // narrow exception: recompute next_due_date here from last_done_date so
+    // the due date follows the new frequency immediately, instead of
+    // staying stuck on the old one until the next PM is performed. If the
+    // plan has never been done (last_done_date is null), there is nothing
+    // to recompute from -- leave next_due_date untouched (still null).
+    const frequencyChanged =
+      isEditMode && plan !== undefined && truncatedFrequency !== plan.frequency_days;
+    const recomputedNextDueDate =
+      frequencyChanged && plan?.last_done_date
+        ? addDaysToIsoDate(plan.last_done_date, truncatedFrequency)
+        : undefined;
+
     const payload = {
       machine_id: machineId,
       pm_name: trimmedPmName,
-      frequency_days: Math.trunc(parsedFrequency),
+      frequency_days: truncatedFrequency,
       checklist,
+      ...(recomputedNextDueDate !== undefined && {
+        next_due_date: recomputedNextDueDate,
+      }),
     };
 
     const { error } =
