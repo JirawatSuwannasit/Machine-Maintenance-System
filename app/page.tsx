@@ -11,6 +11,7 @@ import {
   MACHINE_STATUS_ORDER,
   type MachineStatus,
 } from "@/lib/machineStatus";
+import ScheduleStrip from "@/components/home/ScheduleStrip";
 
 const REFRESH_INTERVAL_MS = 60000;
 
@@ -26,10 +27,53 @@ type MachineRow = {
 type BreakdownRow = { machine_id: string };
 type DueDateRow = { machine_id: string; next_due_date: string };
 
+// Rows for the MMS-020 schedule strip. These extend the two due-date
+// queries the board already runs (pm_plans / machine_parts) with the
+// id/name fields the strip needs, instead of firing separate queries.
+type PmPlanScheduleRow = {
+  id: string;
+  pm_name: string;
+  machine_id: string;
+  next_due_date: string;
+};
+
+type SparePartRelation = { part_code: string; part_name: string };
+
+// Without generated Database types, postgrest-js infers every embedded
+// relation as an array regardless of actual FK cardinality, even though a
+// to-one FK (machine_parts.part_id -> spare_parts.id) returns a plain
+// object at runtime.
+type RawMachinePartScheduleRow = {
+  id: string;
+  machine_id: string;
+  part_id: string;
+  next_due_date: string;
+  spare_parts: SparePartRelation | SparePartRelation[] | null;
+};
+
+type MachinePartScheduleRow = {
+  id: string;
+  machine_id: string;
+  part_id: string;
+  next_due_date: string;
+  part_code: string;
+  part_name: string;
+};
+
+function normalizeSparePartRelation(
+  spareParts: SparePartRelation | SparePartRelation[] | null
+): SparePartRelation | null {
+  if (!spareParts) return null;
+  if (Array.isArray(spareParts)) return spareParts[0] ?? null;
+  return spareParts;
+}
+
 type DashboardData = {
   machines: MachineRow[];
   breakdownMachineIds: Set<string>;
   dueDatesByMachine: Map<string, string[]>;
+  pmPlans: PmPlanScheduleRow[];
+  machineParts: MachinePartScheduleRow[];
 };
 
 type FetchResult =
@@ -49,12 +93,14 @@ async function fetchDashboardData(): Promise<FetchResult> {
         .in("status", ["open", "in_progress"]),
       supabase
         .from("pm_plans")
-        .select("machine_id, next_due_date")
+        .select("id, pm_name, machine_id, next_due_date")
         .eq("is_active", true)
         .not("next_due_date", "is", null),
       supabase
         .from("machine_parts")
-        .select("machine_id, next_due_date")
+        .select(
+          "id, machine_id, part_id, next_due_date, spare_parts(part_code, part_name)"
+        )
         .not("next_due_date", "is", null),
     ]);
 
@@ -71,6 +117,21 @@ async function fetchDashboardData(): Promise<FetchResult> {
   const breakdownMachineIds = new Set<string>(
     (breakdownsRes.data as BreakdownRow[]).map((row) => row.machine_id)
   );
+
+  const pmPlans = (pmPlansRes.data ?? []) as PmPlanScheduleRow[];
+  const machineParts = (
+    (machinePartsRes.data ?? []) as RawMachinePartScheduleRow[]
+  ).map((row) => {
+    const part = normalizeSparePartRelation(row.spare_parts);
+    return {
+      id: row.id,
+      machine_id: row.machine_id,
+      part_id: row.part_id,
+      next_due_date: row.next_due_date,
+      part_code: part?.part_code ?? "-",
+      part_name: part?.part_name ?? "(ไม่พบข้อมูลอะไหล่)",
+    };
+  });
 
   const dueDatesByMachine = new Map<string, string[]>();
   const addDueDate = (machineId: string, dueDate: string) => {
@@ -93,6 +154,8 @@ async function fetchDashboardData(): Promise<FetchResult> {
     machines: (machinesRes.data ?? []) as MachineRow[],
     breakdownMachineIds,
     dueDatesByMachine,
+    pmPlans,
+    machineParts,
   };
 }
 
@@ -174,6 +237,10 @@ export default function Home() {
   const [dueDatesByMachine, setDueDatesByMachine] = useState<
     Map<string, string[]>
   >(new Map());
+  const [pmPlans, setPmPlans] = useState<PmPlanScheduleRow[]>([]);
+  const [machineParts, setMachineParts] = useState<MachinePartScheduleRow[]>(
+    []
+  );
 
   const [searchText, setSearchText] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
@@ -187,6 +254,8 @@ export default function Home() {
       setMachines(result.machines);
       setBreakdownMachineIds(result.breakdownMachineIds);
       setDueDatesByMachine(result.dueDatesByMachine);
+      setPmPlans(result.pmPlans);
+      setMachineParts(result.machineParts);
       setError(null);
     } else {
       setError(result.message);
@@ -347,6 +416,12 @@ export default function Home() {
               );
             })}
           </div>
+
+          <ScheduleStrip
+            pmPlans={pmPlans}
+            machineParts={machineParts}
+            machines={machines}
+          />
 
           {/* Search + filters + add button */}
           <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
