@@ -695,7 +695,7 @@ export default function MachineReportPage() {
                 </h3>
                 <div className="divide-y divide-primary/5 print:divide-black/20">
                   <InfoRow
-                    label="ตำแหน่ง/Line"
+                    label="ส่วนงาน"
                     value={displayValue(state.data.machine.location)}
                   />
                   <InfoRow

@@ -220,7 +220,7 @@ export default function MachineProfilePage() {
                 </h2>
                 <div className="divide-y divide-primary/5">
                   <InfoRow
-                    label="ตำแหน่ง/Line"
+                    label="ส่วนงาน"
                     value={displayValue(state.machine.location)}
                   />
                   <InfoRow

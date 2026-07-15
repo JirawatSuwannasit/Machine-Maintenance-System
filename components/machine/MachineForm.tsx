@@ -249,7 +249,7 @@ export default function MachineForm({ machine, onSuccess }: MachineFormProps) {
 
         <div>
           <label htmlFor="location" className="block text-sm font-medium">
-            ตำแหน่ง/Line
+            ส่วนงาน
           </label>
           <input
             id="location"
