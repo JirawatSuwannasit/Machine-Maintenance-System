@@ -35,7 +35,7 @@ export default function EditMachinePage() {
       const { data, error } = await supabase
         .from("machines")
         .select(
-          "id, machine_code, machine_name, category, location, status, manufacturer, model, serial_no, purchase_date, install_date, warranty_expiry"
+          "id, machine_code, machine_name, category, location, status, manufacturer, model, serial_no, purchase_date, install_date, warranty_expiry, vendor_company, vendor_email, vendor_phone"
         )
         .eq("id", params.id)
         .maybeSingle();
