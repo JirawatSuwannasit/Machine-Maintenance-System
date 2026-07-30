@@ -17,6 +17,9 @@ export type MachineRecord = {
   purchase_date: string | null;
   install_date: string | null;
   warranty_expiry: string | null;
+  vendor_company: string | null;
+  vendor_email: string | null;
+  vendor_phone: string | null;
 };
 
 type MachineFormProps = {
@@ -38,6 +41,8 @@ const inputClassName =
 
 const sectionHeadingClassName =
   "border-b border-primary/10 pb-1 text-sm font-semibold text-primary/70";
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function initialCategorySelect(machine: MachineRecord | undefined): string {
   if (!machine?.category) return "";
@@ -93,6 +98,11 @@ export default function MachineForm({ machine, onSuccess }: MachineFormProps) {
   const [warrantyExpiry, setWarrantyExpiry] = useState(
     machine?.warranty_expiry ?? ""
   );
+  const [vendorCompany, setVendorCompany] = useState(
+    machine?.vendor_company ?? ""
+  );
+  const [vendorEmail, setVendorEmail] = useState(machine?.vendor_email ?? "");
+  const [vendorPhone, setVendorPhone] = useState(machine?.vendor_phone ?? "");
 
   const [machineCodeError, setMachineCodeError] = useState<string | null>(
     null
@@ -101,6 +111,9 @@ export default function MachineForm({ machine, onSuccess }: MachineFormProps) {
     null
   );
   const [serialNoError, setSerialNoError] = useState<string | null>(null);
+  const [vendorEmailError, setVendorEmailError] = useState<string | null>(
+    null
+  );
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -118,6 +131,7 @@ export default function MachineForm({ machine, onSuccess }: MachineFormProps) {
 
     const trimmedCode = machineCode.trim();
     const trimmedName = machineName.trim();
+    const trimmedVendorEmail = vendorEmail.trim();
 
     let hasError = false;
     if (trimmedCode === "") {
@@ -132,6 +146,12 @@ export default function MachineForm({ machine, onSuccess }: MachineFormProps) {
     } else {
       setMachineNameError(null);
     }
+    if (trimmedVendorEmail !== "" && !EMAIL_REGEX.test(trimmedVendorEmail)) {
+      setVendorEmailError("กรุณากรอกอีเมลให้ถูกต้อง");
+      hasError = true;
+    } else {
+      setVendorEmailError(null);
+    }
 
     if (hasError) return;
 
@@ -142,6 +162,8 @@ export default function MachineForm({ machine, onSuccess }: MachineFormProps) {
     const trimmedManufacturer = manufacturer.trim();
     const trimmedModel = model.trim();
     const trimmedSerialNo = serialNo.trim();
+    const trimmedVendorCompany = vendorCompany.trim();
+    const trimmedVendorPhone = vendorPhone.trim();
 
     const payload = {
       machine_code: trimmedCode,
@@ -155,6 +177,10 @@ export default function MachineForm({ machine, onSuccess }: MachineFormProps) {
       purchase_date: purchaseDate === "" ? null : purchaseDate,
       install_date: installDate === "" ? null : installDate,
       warranty_expiry: warrantyExpiry === "" ? null : warrantyExpiry,
+      vendor_company:
+        trimmedVendorCompany === "" ? null : trimmedVendorCompany,
+      vendor_email: trimmedVendorEmail === "" ? null : trimmedVendorEmail,
+      vendor_phone: trimmedVendorPhone === "" ? null : trimmedVendorPhone,
     };
 
     const { error } = isEditMode
@@ -182,7 +208,7 @@ export default function MachineForm({ machine, onSuccess }: MachineFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-lg space-y-6">
+    <form onSubmit={handleSubmit} noValidate className="max-w-lg space-y-6">
       <div className="space-y-4">
         <h2 className={sectionHeadingClassName}>ข้อมูลเครื่องจักร</h2>
 
@@ -362,6 +388,63 @@ export default function MachineForm({ machine, onSuccess }: MachineFormProps) {
             type="date"
             value={warrantyExpiry}
             onChange={(event) => setWarrantyExpiry(event.target.value)}
+            className={inputClassName}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <h2 className={sectionHeadingClassName}>
+          ข้อมูลผู้ขาย / Vendor Contact
+        </h2>
+
+        <div>
+          <label htmlFor="vendor_company" className="block text-sm font-medium">
+            ชื่อบริษัท
+          </label>
+          <input
+            id="vendor_company"
+            type="text"
+            value={vendorCompany}
+            onChange={(event) => setVendorCompany(event.target.value)}
+            className={inputClassName}
+          />
+        </div>
+
+        <div>
+          <label htmlFor="vendor_email" className="block text-sm font-medium">
+            อีเมล
+          </label>
+          <input
+            id="vendor_email"
+            type="email"
+            value={vendorEmail}
+            onChange={(event) => {
+              setVendorEmail(event.target.value);
+              if (vendorEmailError) setVendorEmailError(null);
+            }}
+            aria-invalid={vendorEmailError !== null}
+            aria-describedby={
+              vendorEmailError ? "vendor_email_error" : undefined
+            }
+            className={inputClassName}
+          />
+          {vendorEmailError && (
+            <p id="vendor_email_error" className="mt-1 text-sm text-red-700">
+              {vendorEmailError}
+            </p>
+          )}
+        </div>
+
+        <div>
+          <label htmlFor="vendor_phone" className="block text-sm font-medium">
+            เบอร์โทรติดต่อ
+          </label>
+          <input
+            id="vendor_phone"
+            type="tel"
+            value={vendorPhone}
+            onChange={(event) => setVendorPhone(event.target.value)}
             className={inputClassName}
           />
         </div>

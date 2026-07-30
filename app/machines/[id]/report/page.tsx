@@ -41,6 +41,9 @@ type MachineReport = {
   purchase_date: string | null;
   install_date: string | null;
   warranty_expiry: string | null;
+  vendor_company: string | null;
+  vendor_email: string | null;
+  vendor_phone: string | null;
 };
 
 type BreakdownRow = {
@@ -261,7 +264,7 @@ async function loadReport(
     supabase
       .from("machines")
       .select(
-        "id, machine_code, machine_name, category, location, status, manufacturer, model, serial_no, purchase_date, install_date, warranty_expiry"
+        "id, machine_code, machine_name, category, location, status, manufacturer, model, serial_no, purchase_date, install_date, warranty_expiry, vendor_company, vendor_email, vendor_phone"
       )
       .eq("id", machineId)
       .maybeSingle(),
@@ -704,6 +707,23 @@ export default function MachineReportPage() {
                       MACHINE_OWN_STATUS_LABELS[state.data.machine.status] ??
                       state.data.machine.status
                     }
+                  />
+                </div>
+                <h3 className="mt-4 border-b border-primary/10 pb-1 text-sm font-semibold text-primary/70 print:border-black print:text-black">
+                  ข้อมูลผู้ขาย
+                </h3>
+                <div className="divide-y divide-primary/5 print:divide-black/20">
+                  <InfoRow
+                    label="ชื่อบริษัท"
+                    value={displayValue(state.data.machine.vendor_company)}
+                  />
+                  <InfoRow
+                    label="อีเมล"
+                    value={displayValue(state.data.machine.vendor_email)}
+                  />
+                  <InfoRow
+                    label="เบอร์โทรติดต่อ"
+                    value={displayValue(state.data.machine.vendor_phone)}
                   />
                 </div>
               </div>
