@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, Pencil, Printer } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
@@ -52,7 +52,7 @@ function formatDateThai(isoDate: string | null | undefined): string {
   return `${day}/${month}/${year}`;
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4 py-1.5 text-sm">
       <span className="text-primary/60">{label}</span>
@@ -84,7 +84,7 @@ export default function MachineProfilePage() {
           supabase
             .from("machines")
             .select(
-              "id, machine_code, machine_name, category, location, status, manufacturer, model, serial_no, purchase_date, install_date, warranty_expiry"
+              "id, machine_code, machine_name, category, location, status, manufacturer, model, serial_no, purchase_date, install_date, warranty_expiry, vendor_company, vendor_email, vendor_phone"
             )
             .eq("id", params.id)
             .maybeSingle(),
@@ -261,6 +261,48 @@ export default function MachineProfilePage() {
                   <InfoRow
                     label="วันหมดประกัน"
                     value={formatDateThai(state.machine.warranty_expiry)}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <h2 className="border-b border-primary/10 pb-1 text-sm font-semibold text-primary/70">
+                  ข้อมูลผู้ขาย
+                </h2>
+                <div className="divide-y divide-primary/5">
+                  <InfoRow
+                    label="ชื่อบริษัท"
+                    value={displayValue(state.machine.vendor_company)}
+                  />
+                  <InfoRow
+                    label="อีเมล"
+                    value={
+                      state.machine.vendor_email ? (
+                        <a
+                          href={`mailto:${state.machine.vendor_email}`}
+                          className="break-all text-accent hover:underline"
+                        >
+                          {state.machine.vendor_email}
+                        </a>
+                      ) : (
+                        "-"
+                      )
+                    }
+                  />
+                  <InfoRow
+                    label="เบอร์โทรติดต่อ"
+                    value={
+                      state.machine.vendor_phone ? (
+                        <a
+                          href={`tel:${state.machine.vendor_phone}`}
+                          className="text-accent hover:underline"
+                        >
+                          {state.machine.vendor_phone}
+                        </a>
+                      ) : (
+                        "-"
+                      )
+                    }
                   />
                 </div>
               </div>
