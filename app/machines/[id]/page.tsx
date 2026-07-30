@@ -231,6 +231,46 @@ export default function MachineProfilePage() {
                     }
                   />
                 </div>
+
+                <h2 className="mt-4 border-b border-primary/10 pb-1 text-sm font-semibold text-primary/70">
+                  ข้อมูลผู้ขาย
+                </h2>
+                <div className="divide-y divide-primary/5">
+                  <InfoRow
+                    label="ชื่อบริษัท"
+                    value={displayValue(state.machine.vendor_company)}
+                  />
+                  <InfoRow
+                    label="อีเมล"
+                    value={
+                      state.machine.vendor_email ? (
+                        <a
+                          href={`mailto:${state.machine.vendor_email}`}
+                          className="break-all text-accent hover:underline"
+                        >
+                          {state.machine.vendor_email}
+                        </a>
+                      ) : (
+                        "-"
+                      )
+                    }
+                  />
+                  <InfoRow
+                    label="เบอร์โทรติดต่อ"
+                    value={
+                      state.machine.vendor_phone ? (
+                        <a
+                          href={`tel:${state.machine.vendor_phone}`}
+                          className="text-accent hover:underline"
+                        >
+                          {state.machine.vendor_phone}
+                        </a>
+                      ) : (
+                        "-"
+                      )
+                    }
+                  />
+                </div>
               </div>
 
               <div>

@@ -709,6 +709,23 @@ export default function MachineReportPage() {
                     }
                   />
                 </div>
+                <h3 className="mt-4 border-b border-primary/10 pb-1 text-sm font-semibold text-primary/70 print:border-black print:text-black">
+                  ข้อมูลผู้ขาย
+                </h3>
+                <div className="divide-y divide-primary/5 print:divide-black/20">
+                  <InfoRow
+                    label="ชื่อบริษัท"
+                    value={displayValue(state.data.machine.vendor_company)}
+                  />
+                  <InfoRow
+                    label="อีเมล"
+                    value={displayValue(state.data.machine.vendor_email)}
+                  />
+                  <InfoRow
+                    label="เบอร์โทรติดต่อ"
+                    value={displayValue(state.data.machine.vendor_phone)}
+                  />
+                </div>
               </div>
               <div>
                 <h3 className="border-b border-primary/10 pb-1 text-sm font-semibold text-primary/70 print:border-black print:text-black">
