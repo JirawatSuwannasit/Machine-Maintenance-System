@@ -547,11 +547,12 @@ export default function MachineReportPage() {
             left: 0;
             top: 0;
             width: 100%;
+            max-width: none;
             margin: 0;
           }
           @page {
-            size: A4 portrait;
-            margin: 15mm;
+            size: A4 landscape;
+            margin: 12mm;
           }
           /* !important is required here: <body> carries the app-wide
              bg-surface/text-primary Tailwind classes (from app/layout.tsx,
@@ -570,6 +571,24 @@ export default function MachineReportPage() {
           }
           h2 {
             break-after: avoid;
+          }
+          .report-table-wrap {
+            overflow: visible !important;
+          }
+          .report-table {
+            width: 100%;
+            font-size: 10px;
+            line-height: 1.35;
+          }
+          .report-table th,
+          .report-table td {
+            padding-top: 5px !important;
+            padding-right: 7px !important;
+            padding-bottom: 5px !important;
+            overflow-wrap: anywhere;
+          }
+          .breakdown-history-table {
+            table-layout: fixed;
           }
           .report-badge {
             border: 1px solid #000 !important;
@@ -792,7 +811,7 @@ export default function MachineReportPage() {
             <h2 className="text-lg font-bold text-primary print:text-black">
               สรุป
             </h2>
-            <dl className="mt-2 grid gap-x-8 gap-y-1.5 text-sm sm:grid-cols-2">
+            <dl className="mt-2 grid gap-x-8 gap-y-1.5 text-sm sm:grid-cols-2 print:grid-cols-4">
               <div className="flex justify-between gap-4">
                 <dt className="text-primary/60 print:text-black">
                   จำนวนครั้งที่เสีย
@@ -873,8 +892,18 @@ export default function MachineReportPage() {
               </p>
             ) : (
               <>
-                <div className="mt-3 hidden overflow-x-auto md:block print:!block">
-                  <table className="w-full border-collapse text-sm">
+                <div className="report-table-wrap mt-3 hidden overflow-x-auto md:block print:!block">
+                  <table className="report-table breakdown-history-table w-full border-collapse text-sm">
+                    <colgroup>
+                      <col className="w-[9%]" />
+                      <col className="w-[17%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[15%]" />
+                      <col className="w-[18%]" />
+                      <col className="w-[10%]" />
+                      <col className="w-[10%]" />
+                      <col className="w-[9%]" />
+                    </colgroup>
                     <thead>
                       <tr className="border-b border-primary/10 text-left text-primary/60 print:border-black print:text-black">
                         <th className="py-2 pr-4 font-medium">วันที่</th>
@@ -899,7 +928,7 @@ export default function MachineReportPage() {
                           <td className="max-w-xs break-words py-2 pr-4 align-top text-primary print:text-black">
                             {row.symptom}
                           </td>
-                          <td className="whitespace-nowrap py-2 pr-4 align-top text-primary/70 print:text-black">
+                          <td className="break-words py-2 pr-4 align-top text-primary/70 print:text-black">
                             {OPERATING_IMPACT_LABELS[row.operating_impact]}
                           </td>
                           <td className="max-w-xs break-words py-2 pr-4 align-top text-primary/70 print:text-black">
@@ -908,7 +937,7 @@ export default function MachineReportPage() {
                           <td className="max-w-xs break-words py-2 pr-4 align-top text-primary/70 print:text-black">
                             {row.action_taken ?? "-"}
                           </td>
-                          <td className="whitespace-nowrap py-2 pr-4 align-top text-primary/70 print:text-black">
+                          <td className="break-words py-2 pr-4 align-top text-primary/70 print:text-black">
                             {row.downtime_minutes != null
                               ? formatDowntimeThai(row.downtime_minutes)
                               : "-"}
@@ -925,7 +954,7 @@ export default function MachineReportPage() {
                     <tfoot>
                       <tr className="border-t border-primary/20 font-bold print:border-black">
                         <td
-                          colSpan={4}
+                          colSpan={5}
                           className="py-2 pr-4 text-right text-primary print:text-black"
                         >
                           รวม
@@ -993,8 +1022,8 @@ export default function MachineReportPage() {
               </p>
             ) : (
               <>
-                <div className="mt-3 hidden overflow-x-auto md:block print:!block">
-                  <table className="w-full border-collapse text-sm">
+                <div className="report-table-wrap mt-3 hidden overflow-x-auto md:block print:!block">
+                  <table className="report-table w-full border-collapse text-sm">
                     <thead>
                       <tr className="border-b border-primary/10 text-left text-primary/60 print:border-black print:text-black">
                         <th className="py-2 pr-4 font-medium">วันที่</th>
@@ -1102,8 +1131,8 @@ export default function MachineReportPage() {
               </p>
             ) : (
               <>
-                <div className="mt-3 hidden overflow-x-auto md:block print:!block">
-                  <table className="w-full border-collapse text-sm">
+                <div className="report-table-wrap mt-3 hidden overflow-x-auto md:block print:!block">
+                  <table className="report-table w-full border-collapse text-sm">
                     <thead>
                       <tr className="border-b border-primary/10 text-left text-primary/60 print:border-black print:text-black">
                         <th className="py-2 pr-4 font-medium">วันที่</th>
@@ -1218,8 +1247,8 @@ export default function MachineReportPage() {
               </p>
             ) : (
               <>
-                <div className="mt-3 hidden overflow-x-auto md:block print:!block">
-                  <table className="w-full border-collapse text-sm">
+                <div className="report-table-wrap mt-3 hidden overflow-x-auto md:block print:!block">
+                  <table className="report-table w-full border-collapse text-sm">
                     <thead>
                       <tr className="border-b border-primary/10 text-left text-primary/60 print:border-black print:text-black">
                         <th className="py-2 pr-4 font-medium">ประเภท</th>
