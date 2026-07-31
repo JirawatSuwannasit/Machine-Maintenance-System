@@ -9,6 +9,12 @@ import PartsUsedEditor, {
   type LinkedPart,
   type PartLine,
 } from "@/components/breakdowns/PartsUsedEditor";
+import OperatingImpactBadge from "@/components/breakdowns/OperatingImpactBadge";
+import {
+  isOperatingImpact,
+  OPERATING_IMPACT_OPTIONS,
+  type OperatingImpact,
+} from "@/lib/operatingImpact";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -26,6 +32,7 @@ type BreakdownDetail = {
   repair_cost: number | string;
   technician: string | null;
   status: string;
+  operating_impact: OperatingImpact;
   closed_at: string | null;
   machines: MachineRelation | null;
 };
@@ -52,7 +59,7 @@ function normalizeBreakdown(raw: RawBreakdownDetail): BreakdownDetail {
 }
 
 const BREAKDOWN_SELECT =
-  "id, machine_id, reported_at, symptom, cause, action_taken, downtime_minutes, repair_cost, technician, status, closed_at, machines(machine_code, machine_name)";
+  "id, machine_id, reported_at, symptom, cause, action_taken, downtime_minutes, repair_cost, technician, status, operating_impact, closed_at, machines(machine_code, machine_name)";
 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   open: {
@@ -80,6 +87,57 @@ function StatusBadge({ status }: { status: string }) {
     >
       {info.label}
     </span>
+  );
+}
+
+function OperatingImpactField({
+  value,
+  onChange,
+  error,
+}: {
+  value: OperatingImpact | "";
+  onChange: (value: OperatingImpact) => void;
+  error: string | null;
+}) {
+  return (
+    <fieldset>
+      <legend className="text-sm font-medium">
+        ผลกระทบต่อการเดินเครื่อง*
+      </legend>
+      <div className="mt-2 space-y-2">
+        {OPERATING_IMPACT_OPTIONS.map((option) => {
+          const selected = value === option.value;
+          return (
+            <label
+              key={option.value}
+              className={`flex min-h-[64px] cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
+                selected
+                  ? "border-accent bg-accent/5 ring-1 ring-accent"
+                  : "border-primary/15 bg-white hover:bg-surface"
+              }`}
+            >
+              <input
+                type="radio"
+                name="operating_impact"
+                value={option.value}
+                checked={selected}
+                onChange={() => onChange(option.value)}
+                className="mt-1 h-5 w-5 shrink-0 accent-accent"
+              />
+              <span>
+                <span className="block text-sm font-medium text-primary">
+                  {option.label}
+                </span>
+                <span className="mt-0.5 block text-xs leading-5 text-primary/60">
+                  {option.description}
+                </span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      {error && <p className="mt-1 text-sm text-red-700">{error}</p>}
+    </fieldset>
   );
 }
 
@@ -373,12 +431,18 @@ export default function BreakdownDetailPage() {
   const [downtimeMinutes, setDowntimeMinutes] = useState<number | "">(0);
   const [repairCost, setRepairCost] = useState<number | "">(0);
   const [closeTechnician, setCloseTechnician] = useState("");
+  const [operatingImpact, setOperatingImpact] = useState<OperatingImpact | "">(
+    ""
+  );
 
   const [causeError, setCauseError] = useState<string | null>(null);
   const [actionTakenError, setActionTakenError] = useState<string | null>(
     null
   );
   const [downtimeError, setDowntimeError] = useState<string | null>(null);
+  const [operatingImpactError, setOperatingImpactError] = useState<
+    string | null
+  >(null);
   const [closeFormError, setCloseFormError] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
   const [showCloseSuccess, setShowCloseSuccess] = useState(false);
@@ -457,6 +521,7 @@ export default function BreakdownDetailPage() {
           : 0
       );
       setCloseTechnician(breakdown.technician ?? "");
+      setOperatingImpact(breakdown.operating_impact);
       setPartLines(existingParts.lines);
       setOriginalPartLines(existingParts.lines);
 
@@ -516,6 +581,12 @@ export default function BreakdownDetailPage() {
     const trimmedActionTaken = actionTaken.trim();
 
     let hasError = false;
+    if (!isOperatingImpact(operatingImpact)) {
+      setOperatingImpactError("กรุณาเลือกผลกระทบต่อการเดินเครื่อง");
+      hasError = true;
+    } else {
+      setOperatingImpactError(null);
+    }
     if (trimmedCause === "") {
       setCauseError("กรุณากรอกสาเหตุ");
       hasError = true;
@@ -572,6 +643,7 @@ export default function BreakdownDetailPage() {
         downtime_minutes: downtimeValue,
         repair_cost: repairCostValue,
         technician: trimmedCloseTechnician === "" ? null : trimmedCloseTechnician,
+        operating_impact: operatingImpact,
       })
       .eq("id", state.breakdown.id)
       .select(BREAKDOWN_SELECT)
@@ -886,6 +958,16 @@ export default function BreakdownDetailPage() {
 
             <div className="mt-3">
               <StatusBadge status={state.breakdown.status} />
+              <span className="ml-2">
+                <OperatingImpactBadge
+                  impact={
+                    state.breakdown.status !== "closed" &&
+                    isOperatingImpact(operatingImpact)
+                      ? operatingImpact
+                      : state.breakdown.operating_impact
+                  }
+                />
+              </span>
             </div>
 
             <dl className="mt-3 space-y-1.5 text-sm">
@@ -913,6 +995,20 @@ export default function BreakdownDetailPage() {
           {/* View A: open -> accept the job */}
           {state.breakdown.status === "open" && (
             <div className="mt-4 space-y-4">
+              <div className="rounded-lg border border-primary/10 bg-white p-4">
+                <OperatingImpactField
+                  value={operatingImpact}
+                  onChange={(value) => {
+                    setOperatingImpact(value);
+                    setOperatingImpactError(null);
+                  }}
+                  error={operatingImpactError}
+                />
+                <p className="mt-2 text-xs text-primary/50">
+                  ระบบจะบันทึกค่าล่าสุดเมื่อปิดงาน
+                </p>
+              </div>
+
               {!acceptingJob && (
                 <div className="flex gap-3">
                   <Link
@@ -1007,6 +1103,15 @@ export default function BreakdownDetailPage() {
               onSubmit={handleCloseSubmit}
               className="mt-4 space-y-4 rounded-lg border border-primary/10 bg-white p-4"
             >
+              <OperatingImpactField
+                value={operatingImpact}
+                onChange={(value) => {
+                  setOperatingImpact(value);
+                  setOperatingImpactError(null);
+                }}
+                error={operatingImpactError}
+              />
+
               <div>
                 <label htmlFor="cause" className="block text-sm font-medium">
                   สาเหตุ*

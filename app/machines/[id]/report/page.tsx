@@ -5,6 +5,10 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import {
+  OPERATING_IMPACT_LABELS,
+  type OperatingImpact,
+} from "@/lib/operatingImpact";
+import {
   computeMachineStatus,
   MACHINE_STATUS_COLORS,
   MACHINE_STATUS_LABELS,
@@ -55,6 +59,7 @@ type BreakdownRow = {
   downtime_minutes: number | null;
   repair_cost: number | string;
   technician: string | null;
+  operating_impact: OperatingImpact;
 };
 
 type PlanRelation = { pm_name: string };
@@ -224,7 +229,7 @@ const EARLIEST_ISO_DATE = "2000-01-01";
 // ===== Fetching =====
 
 const BREAKDOWN_SELECT =
-  "id, reported_at, symptom, cause, action_taken, downtime_minutes, repair_cost, technician";
+  "id, reported_at, symptom, cause, action_taken, downtime_minutes, repair_cost, technician, operating_impact";
 const PM_RECORD_SELECT =
   "id, done_date, done_by, pm_cost, notes, checklist_result, pm_plans(pm_name)";
 const REPLACEMENT_SELECT =
@@ -280,7 +285,7 @@ async function loadReport(
     // report happens to be showing.
     supabase
       .from("breakdowns")
-      .select("id")
+      .select("operating_impact")
       .eq("machine_id", machineId)
       .in("status", ["open", "in_progress"]),
     supabase
@@ -375,10 +380,12 @@ async function loadReport(
     a.dueDate.localeCompare(b.dueDate)
   );
 
-  const hasOpenBreakdown = (openBreakdownsRes.data ?? []).length > 0;
+  const unresolvedBreakdownImpacts = (openBreakdownsRes.data ?? []).map(
+    (row) => row.operating_impact
+  );
   const computedStatus = computeMachineStatus(
     machine.status,
-    hasOpenBreakdown,
+    unresolvedBreakdownImpacts,
     upcoming.map((row) => row.dueDate)
   );
 
@@ -872,6 +879,7 @@ export default function MachineReportPage() {
                       <tr className="border-b border-primary/10 text-left text-primary/60 print:border-black print:text-black">
                         <th className="py-2 pr-4 font-medium">วันที่</th>
                         <th className="py-2 pr-4 font-medium">อาการ</th>
+                        <th className="py-2 pr-4 font-medium">ผลต่อการเดินเครื่อง</th>
                         <th className="py-2 pr-4 font-medium">สาเหตุ</th>
                         <th className="py-2 pr-4 font-medium">วิธีแก้ไข</th>
                         <th className="py-2 pr-4 font-medium">Downtime</th>
@@ -890,6 +898,9 @@ export default function MachineReportPage() {
                           </td>
                           <td className="max-w-xs break-words py-2 pr-4 align-top text-primary print:text-black">
                             {row.symptom}
+                          </td>
+                          <td className="whitespace-nowrap py-2 pr-4 align-top text-primary/70 print:text-black">
+                            {OPERATING_IMPACT_LABELS[row.operating_impact]}
                           </td>
                           <td className="max-w-xs break-words py-2 pr-4 align-top text-primary/70 print:text-black">
                             {row.cause ?? "-"}
