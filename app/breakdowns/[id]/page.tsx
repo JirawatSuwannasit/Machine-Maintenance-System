@@ -1062,7 +1062,7 @@ export default function BreakdownDetailPage() {
               <span className="ml-2">
                 <OperatingImpactBadge
                   impact={
-                    state.breakdown.status === "in_progress" &&
+                    state.breakdown.status !== "closed" &&
                     isOperatingImpact(operatingImpact)
                       ? operatingImpact
                       : state.breakdown.operating_impact
