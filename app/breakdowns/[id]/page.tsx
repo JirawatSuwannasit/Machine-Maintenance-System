@@ -1096,20 +1096,6 @@ export default function BreakdownDetailPage() {
           {/* View A: open -> accept the job */}
           {state.breakdown.status === "open" && (
             <div className="mt-4 space-y-4">
-              <div className="rounded-lg border border-primary/10 bg-white p-4">
-                <OperatingImpactField
-                  value={operatingImpact}
-                  onChange={(value) => {
-                    setOperatingImpact(value);
-                    setOperatingImpactError(null);
-                  }}
-                  error={operatingImpactError}
-                />
-                <p className="mt-2 text-xs text-primary/50">
-                  ระบบจะบันทึกค่าล่าสุดเมื่อปิดงาน
-                </p>
-              </div>
-
               {!acceptingJob && (
                 <div className="flex gap-3">
                   <Link
