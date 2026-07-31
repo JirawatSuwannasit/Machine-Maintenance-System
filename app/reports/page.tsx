@@ -147,6 +147,7 @@ type BreakdownRow = {
   downtime_minutes: number | null;
   repair_cost: number | string;
   status: string;
+  operating_impact: "running" | "limited" | "stopped";
 };
 type PmPlanRow = {
   id: string;
@@ -193,7 +194,7 @@ async function loadReportsData(from: string, to: string): Promise<LoadState> {
       supabase
         .from("breakdowns")
         .select(
-          "id, machine_id, reported_at, downtime_minutes, repair_cost, status"
+          "id, machine_id, reported_at, downtime_minutes, repair_cost, status, operating_impact"
         )
         .gte("reported_at", from)
         .lt("reported_at", breakdownUpperBound),

@@ -24,7 +24,10 @@ type MachineRow = {
   status: string;
 };
 
-type BreakdownRow = { machine_id: string };
+type BreakdownRow = {
+  machine_id: string;
+  operating_impact: "running" | "limited" | "stopped";
+};
 type DueDateRow = { machine_id: string; next_due_date: string };
 
 // Rows for the MMS-020 schedule strip. These extend the two due-date
@@ -70,7 +73,7 @@ function normalizeSparePartRelation(
 
 type DashboardData = {
   machines: MachineRow[];
-  breakdownMachineIds: Set<string>;
+  breakdownImpactsByMachine: Map<string, BreakdownRow["operating_impact"][]>;
   dueDatesByMachine: Map<string, string[]>;
   pmPlans: PmPlanScheduleRow[];
   machineParts: MachinePartScheduleRow[];
@@ -89,7 +92,7 @@ async function fetchDashboardData(): Promise<FetchResult> {
         .order("machine_code", { ascending: true }),
       supabase
         .from("breakdowns")
-        .select("machine_id")
+        .select("machine_id, operating_impact")
         .in("status", ["open", "in_progress"]),
       supabase
         .from("pm_plans")
@@ -114,9 +117,15 @@ async function fetchDashboardData(): Promise<FetchResult> {
     return { ok: false, message: firstError.message };
   }
 
-  const breakdownMachineIds = new Set<string>(
-    (breakdownsRes.data as BreakdownRow[]).map((row) => row.machine_id)
-  );
+  const breakdownImpactsByMachine = new Map<
+    string,
+    BreakdownRow["operating_impact"][]
+  >();
+  for (const row of breakdownsRes.data as BreakdownRow[]) {
+    const impacts = breakdownImpactsByMachine.get(row.machine_id) ?? [];
+    impacts.push(row.operating_impact);
+    breakdownImpactsByMachine.set(row.machine_id, impacts);
+  }
 
   const pmPlans = (pmPlansRes.data ?? []) as PmPlanScheduleRow[];
   const machineParts = (
@@ -152,7 +161,7 @@ async function fetchDashboardData(): Promise<FetchResult> {
   return {
     ok: true,
     machines: (machinesRes.data ?? []) as MachineRow[],
-    breakdownMachineIds,
+    breakdownImpactsByMachine,
     dueDatesByMachine,
     pmPlans,
     machineParts,
@@ -231,9 +240,9 @@ export default function Home() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [machines, setMachines] = useState<MachineRow[]>([]);
-  const [breakdownMachineIds, setBreakdownMachineIds] = useState<Set<string>>(
-    new Set()
-  );
+  const [breakdownImpactsByMachine, setBreakdownImpactsByMachine] = useState<
+    Map<string, BreakdownRow["operating_impact"][]>
+  >(new Map());
   const [dueDatesByMachine, setDueDatesByMachine] = useState<
     Map<string, string[]>
   >(new Map());
@@ -252,7 +261,7 @@ export default function Home() {
     const result = await fetchDashboardData();
     if (result.ok) {
       setMachines(result.machines);
-      setBreakdownMachineIds(result.breakdownMachineIds);
+      setBreakdownImpactsByMachine(result.breakdownImpactsByMachine);
       setDueDatesByMachine(result.dueDatesByMachine);
       setPmPlans(result.pmPlans);
       setMachineParts(result.machineParts);
@@ -278,22 +287,24 @@ export default function Home() {
       ...machine,
       computedStatus: computeMachineStatus(
         machine.status,
-        breakdownMachineIds.has(machine.id),
+        breakdownImpactsByMachine.get(machine.id) ?? [],
         dueDatesByMachine.get(machine.id) ?? []
       ),
     }));
-  }, [machines, breakdownMachineIds, dueDatesByMachine]);
+  }, [machines, breakdownImpactsByMachine, dueDatesByMachine]);
 
   const summary = useMemo(() => {
     let red = 0;
+    let limited = 0;
     let yellow = 0;
     let green = 0;
     for (const machine of machinesWithStatus) {
       if (machine.computedStatus === "red") red += 1;
+      else if (machine.computedStatus === "limited") limited += 1;
       else if (machine.computedStatus === "yellow") yellow += 1;
       else if (machine.computedStatus === "green") green += 1;
     }
-    return { total: machinesWithStatus.length, red, yellow, green };
+    return { total: machinesWithStatus.length, red, limited, yellow, green };
   }, [machinesWithStatus]);
 
   const categories = useMemo(() => {
@@ -344,6 +355,12 @@ export default function Home() {
       label: "เสียอยู่",
       count: summary.red,
       color: MACHINE_STATUS_COLORS.red,
+    },
+    {
+      key: "limited",
+      label: "ทำงานแบบจำกัด",
+      count: summary.limited,
+      color: MACHINE_STATUS_COLORS.limited,
     },
     {
       key: "yellow",

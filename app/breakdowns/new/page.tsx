@@ -26,6 +26,7 @@ function NewBreakdownPageInner() {
       reported_at: values.reportedAtIso,
       technician: values.technician,
       status: "open",
+      operating_impact: values.operatingImpact,
     });
 
     if (error) return error.message;

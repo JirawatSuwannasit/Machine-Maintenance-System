@@ -8,6 +8,10 @@ import {
   type FormEvent,
 } from "react";
 import { supabase } from "@/lib/supabase";
+import {
+  OPERATING_IMPACT_OPTIONS,
+  type OperatingImpact,
+} from "@/lib/operatingImpact";
 
 type MachineOption = {
   id: string;
@@ -20,6 +24,7 @@ export type BreakdownFormValues = {
   symptom: string;
   reportedAtIso: string;
   technician: string | null;
+  operatingImpact: OperatingImpact;
 };
 
 type BreakdownFormProps = {
@@ -33,6 +38,7 @@ type BreakdownFormProps = {
   // matching the original report form's behaviour.
   initialReportedAt?: string;
   initialTechnician?: string;
+  initialOperatingImpact?: OperatingImpact;
   submitLabel: string;
   onCancel: () => void;
   // Returns an error message to display inline, or null on success. This
@@ -66,6 +72,7 @@ export default function BreakdownForm({
   initialSymptom,
   initialReportedAt,
   initialTechnician,
+  initialOperatingImpact = "stopped",
   submitLabel,
   onCancel,
   onSubmit,
@@ -82,6 +89,9 @@ export default function BreakdownForm({
     () => initialReportedAt ?? nowAsDatetimeLocal()
   );
   const [technician, setTechnician] = useState(initialTechnician ?? "");
+  const [operatingImpact, setOperatingImpact] = useState<OperatingImpact>(
+    initialOperatingImpact
+  );
 
   const [machineError, setMachineError] = useState<string | null>(null);
   const [symptomError, setSymptomError] = useState<string | null>(null);
@@ -175,6 +185,7 @@ export default function BreakdownForm({
       symptom: trimmedSymptom,
       reportedAtIso: datetimeLocalToIso(reportedAt),
       technician: trimmedTechnician === "" ? null : trimmedTechnician,
+      operatingImpact,
     });
 
     if (errorMessage) {
@@ -282,6 +293,24 @@ export default function BreakdownForm({
         {symptomError && (
           <p className="mt-1 text-sm text-red-700">{symptomError}</p>
         )}
+      </div>
+
+      <div>
+        <label htmlFor="operating_impact" className="block text-sm font-medium">
+          ผลกระทบต่อการเดินเครื่อง*
+        </label>
+        <select
+          id="operating_impact"
+          value={operatingImpact}
+          onChange={(event) => setOperatingImpact(event.target.value as OperatingImpact)}
+          className={inputClassName}
+        >
+          {OPERATING_IMPACT_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label} — {option.description}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div>
