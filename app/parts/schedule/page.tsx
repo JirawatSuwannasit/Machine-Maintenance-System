@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { formatDateThai, computeDueDiffDays } from "@/lib/pmDueDate";
+import MultiSelectFilter from "@/components/MultiSelectFilter";
 
 // This page's own procurement/planning horizon -- deliberately LONGER than
 // lib/machineStatus.ts's DUE_SOON_DAYS (7), which drives the shop-floor
@@ -350,8 +351,8 @@ function ScheduleGroupSection({
 
 export default function PartsSchedulePage() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
-  const [machineFilter, setMachineFilter] = useState("");
-  const [partFilter, setPartFilter] = useState("");
+  const [machineFilters, setMachineFilters] = useState<string[]>([]);
+  const [partFilters, setPartFilters] = useState<string[]>([]);
   const [insufficientOnly, setInsufficientOnly] = useState(false);
 
   useEffect(() => {
@@ -405,12 +406,14 @@ export default function PartsSchedulePage() {
 
   const filteredRows = useMemo(() => {
     return rows.filter((row) => {
-      if (machineFilter && row.machine_id !== machineFilter) return false;
-      if (partFilter && row.part_id !== partFilter) return false;
+      if (machineFilters.length > 0 && !machineFilters.includes(row.machine_id))
+        return false;
+      if (partFilters.length > 0 && !partFilters.includes(row.part_id))
+        return false;
       if (insufficientOnly && !getShortageInfo(row, demandByPart)) return false;
       return true;
     });
-  }, [rows, machineFilter, partFilter, insufficientOnly, demandByPart]);
+  }, [rows, machineFilters, partFilters, insufficientOnly, demandByPart]);
 
   const overdueRows = filteredRows
     .filter((r) => r.bucket === "overdue")
@@ -438,41 +441,29 @@ export default function PartsSchedulePage() {
         <>
           {/* Filters */}
           <div className="mt-4 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end">
-            <div>
-              <label className="block text-xs font-medium text-primary/60">
-                เครื่องจักร
-              </label>
-              <select
-                value={machineFilter}
-                onChange={(event) => setMachineFilter(event.target.value)}
-                className="mt-1 min-h-[44px] w-full rounded-md border border-primary/20 px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent md:w-64"
-              >
-                <option value="">ทั้งหมด</option>
-                {machineOptions.map((machine) => (
-                  <option key={machine.id} value={machine.id}>
-                    {machine.machine_code} — {machine.machine_name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <MultiSelectFilter
+              label="เครื่องจักร"
+              allLabel="ทุกเครื่อง"
+              options={machineOptions.map((machine) => ({
+                value: machine.id,
+                label: `${machine.machine_code} — ${machine.machine_name}`,
+              }))}
+              selected={machineFilters}
+              onChange={setMachineFilters}
+              className="md:w-64"
+            />
 
-            <div>
-              <label className="block text-xs font-medium text-primary/60">
-                อะไหล่
-              </label>
-              <select
-                value={partFilter}
-                onChange={(event) => setPartFilter(event.target.value)}
-                className="mt-1 min-h-[44px] w-full rounded-md border border-primary/20 px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent md:w-64"
-              >
-                <option value="">ทั้งหมด</option>
-                {partOptions.map((part) => (
-                  <option key={part.id} value={part.id}>
-                    {part.part_code} — {part.part_name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <MultiSelectFilter
+              label="อะไหล่"
+              allLabel="ทุกอะไหล่"
+              options={partOptions.map((part) => ({
+                value: part.id,
+                label: `${part.part_code} — ${part.part_name}`,
+              }))}
+              selected={partFilters}
+              onChange={setPartFilters}
+              className="md:w-64"
+            />
 
             <label className="flex min-h-[44px] items-center gap-2 text-sm text-primary">
               <input

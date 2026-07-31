@@ -12,6 +12,7 @@ import {
   type MachineStatus,
 } from "@/lib/machineStatus";
 import ScheduleStrip from "@/components/home/ScheduleStrip";
+import MultiSelectFilter from "@/components/MultiSelectFilter";
 
 const REFRESH_INTERVAL_MS = 60000;
 
@@ -252,10 +253,8 @@ export default function Home() {
   );
 
   const [searchText, setSearchText] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<MachineStatus | null>(
-    null
-  );
+  const [categoryFilters, setCategoryFilters] = useState<string[]>([]);
+  const [statusFilters, setStatusFilters] = useState<MachineStatus[]>([]);
 
   const loadData = useCallback(async (isInitial: boolean) => {
     const result = await fetchDashboardData();
@@ -318,10 +317,16 @@ export default function Home() {
   const filteredMachines = useMemo(() => {
     const normalizedSearch = searchText.trim().toLowerCase();
     return machinesWithStatus.filter((machine) => {
-      if (statusFilter && machine.computedStatus !== statusFilter) {
+      if (
+        statusFilters.length > 0 &&
+        !statusFilters.includes(machine.computedStatus)
+      ) {
         return false;
       }
-      if (categoryFilter && machine.category !== categoryFilter) {
+      if (
+        categoryFilters.length > 0 &&
+        (!machine.category || !categoryFilters.includes(machine.category))
+      ) {
         return false;
       }
       if (normalizedSearch) {
@@ -337,10 +342,18 @@ export default function Home() {
       }
       return true;
     });
-  }, [machinesWithStatus, statusFilter, categoryFilter, searchText]);
+  }, [machinesWithStatus, statusFilters, categoryFilters, searchText]);
 
   function handleStatCardClick(target: MachineStatus | null) {
-    setStatusFilter((prev) => (prev === target ? null : target));
+    if (target === null) {
+      setStatusFilters([]);
+      return;
+    }
+    setStatusFilters((current) =>
+      current.includes(target)
+        ? current.filter((status) => status !== target)
+        : [...current, target]
+    );
   }
 
   const statCards: Array<{
@@ -399,8 +412,8 @@ export default function Home() {
             {statCards.map((card) => {
               const isActive =
                 card.key === "all"
-                  ? statusFilter === null
-                  : statusFilter === card.key;
+                  ? statusFilters.length === 0
+                  : statusFilters.includes(card.key);
               return (
                 <button
                   key={card.key}
@@ -450,36 +463,28 @@ export default function Home() {
                 placeholder="ค้นหารหัสหรือชื่อเครื่องจักร"
                 className="min-h-[44px] w-full rounded-md border border-primary/20 px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent sm:max-w-xs"
               />
-              <select
-                value={categoryFilter ?? ""}
-                onChange={(event) =>
-                  setCategoryFilter(event.target.value || null)
-                }
-                className="min-h-[44px] rounded-md border border-primary/20 px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-              >
-                <option value="">ทุกประเภท</option>
-                {categories.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={statusFilter ?? ""}
-                onChange={(event) =>
-                  setStatusFilter(
-                    (event.target.value || null) as MachineStatus | null
-                  )
-                }
-                className="min-h-[44px] rounded-md border border-primary/20 px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-              >
-                <option value="">ทุกสถานะ</option>
-                {MACHINE_STATUS_ORDER.map((status) => (
-                  <option key={status} value={status}>
-                    {MACHINE_STATUS_LABELS[status]}
-                  </option>
-                ))}
-              </select>
+              <MultiSelectFilter
+                label="ประเภท"
+                allLabel="ทุกประเภท"
+                options={categories.map((category) => ({
+                  value: category,
+                  label: category,
+                }))}
+                selected={categoryFilters}
+                onChange={setCategoryFilters}
+                className="sm:min-w-44"
+              />
+              <MultiSelectFilter
+                label="สถานะ"
+                allLabel="ทุกสถานะ"
+                options={MACHINE_STATUS_ORDER.map((status) => ({
+                  value: status,
+                  label: MACHINE_STATUS_LABELS[status],
+                }))}
+                selected={statusFilters}
+                onChange={(values) => setStatusFilters(values as MachineStatus[])}
+                className="sm:min-w-44"
+              />
             </div>
             <Link
               href="/machines/new"

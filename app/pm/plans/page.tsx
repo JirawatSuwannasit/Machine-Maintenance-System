@@ -12,6 +12,7 @@ import PmPlanForm, {
   type PmPlanMachineOption,
   type PmPlanRecord,
 } from "@/components/pm/PmPlanForm";
+import MultiSelectFilter from "@/components/MultiSelectFilter";
 
 type MachineRelation = { machine_code: string; machine_name: string };
 
@@ -165,7 +166,7 @@ export default function PmPlansPage() {
   const [plans, setPlans] = useState<PmPlanRow[]>([]);
   const [machines, setMachines] = useState<MachineOption[]>([]);
 
-  const [machineFilterId, setMachineFilterId] = useState("");
+  const [machineFilterIds, setMachineFilterIds] = useState<string[]>([]);
   const [activeOnly, setActiveOnly] = useState(true);
 
   const [showForm, setShowForm] = useState(false);
@@ -276,11 +277,15 @@ export default function PmPlansPage() {
 
   const filteredPlans = useMemo(() => {
     return plans.filter((plan) => {
-      if (machineFilterId && plan.machine_id !== machineFilterId) return false;
+      if (
+        machineFilterIds.length > 0 &&
+        !machineFilterIds.includes(plan.machine_id)
+      )
+        return false;
       if (activeOnly && !plan.is_active) return false;
       return true;
     });
-  }, [plans, machineFilterId, activeOnly]);
+  }, [plans, machineFilterIds, activeOnly]);
 
   const editingPlanRecord: PmPlanRecord | undefined = editingPlan ?? undefined;
 
@@ -326,23 +331,17 @@ export default function PmPlansPage() {
         <>
           {/* Filters */}
           <div className="mt-4 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end">
-            <div>
-              <label className="block text-xs font-medium text-primary/60">
-                เครื่องจักร
-              </label>
-              <select
-                value={machineFilterId}
-                onChange={(event) => setMachineFilterId(event.target.value)}
-                className="mt-1 min-h-[44px] w-full rounded-md border border-primary/20 px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent md:w-auto"
-              >
-                <option value="">ทุกเครื่อง</option>
-                {machines.map((machine) => (
-                  <option key={machine.id} value={machine.id}>
-                    {machine.machine_code} — {machine.machine_name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <MultiSelectFilter
+              label="เครื่องจักร"
+              allLabel="ทุกเครื่อง"
+              options={machines.map((machine) => ({
+                value: machine.id,
+                label: `${machine.machine_code} — ${machine.machine_name}`,
+              }))}
+              selected={machineFilterIds}
+              onChange={setMachineFilterIds}
+              className="md:min-w-64"
+            />
 
             <label className="flex min-h-[44px] items-center gap-2 text-sm text-primary">
               <input
