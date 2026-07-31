@@ -1,4 +1,12 @@
-export type MachineStatus = "red" | "yellow" | "orange" | "green" | "gray";
+import type { OperatingImpact } from "@/lib/operatingImpact";
+
+export type MachineStatus =
+  | "red"
+  | "limited"
+  | "yellow"
+  | "orange"
+  | "green"
+  | "gray";
 
 // Number of days ahead a due date counts as "due soon" (orange).
 // Change this single constant to retune the status rules.
@@ -6,6 +14,7 @@ export const DUE_SOON_DAYS = 7;
 
 export const MACHINE_STATUS_ORDER: MachineStatus[] = [
   "red",
+  "limited",
   "yellow",
   "orange",
   "green",
@@ -14,6 +23,7 @@ export const MACHINE_STATUS_ORDER: MachineStatus[] = [
 
 export const MACHINE_STATUS_COLORS: Record<MachineStatus, string> = {
   red: "#DC2626",
+  limited: "#D97706",
   yellow: "#EAB308",
   orange: "#F97316",
   green: "#16A34A",
@@ -22,6 +32,7 @@ export const MACHINE_STATUS_COLORS: Record<MachineStatus, string> = {
 
 export const MACHINE_STATUS_LABELS: Record<MachineStatus, string> = {
   red: "เสียอยู่",
+  limited: "ทำงานแบบจำกัด",
   yellow: "เลยกำหนด",
   orange: "ใกล้ถึงรอบ",
   green: "ปกติ",
@@ -45,7 +56,7 @@ function toLocalDayStart(date: Date): Date {
 // pm_plans.next_due_date and machine_parts.next_due_date for one machine.
 export function computeMachineStatus(
   machineStatus: string,
-  hasOpenBreakdown: boolean,
+  unresolvedBreakdownImpacts: OperatingImpact[],
   dueDates: string[],
   referenceDate: Date = new Date()
 ): MachineStatus {
@@ -53,8 +64,12 @@ export function computeMachineStatus(
     return "gray";
   }
 
-  if (hasOpenBreakdown) {
+  if (unresolvedBreakdownImpacts.includes("stopped")) {
     return "red";
+  }
+
+  if (unresolvedBreakdownImpacts.includes("limited")) {
+    return "limited";
   }
 
   const today = toLocalDayStart(referenceDate);

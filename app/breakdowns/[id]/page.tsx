@@ -9,6 +9,8 @@ import PartsUsedEditor, {
   type LinkedPart,
   type PartLine,
 } from "@/components/breakdowns/PartsUsedEditor";
+import OperatingImpactBadge from "@/components/breakdowns/OperatingImpactBadge";
+import type { OperatingImpact } from "@/lib/operatingImpact";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -26,6 +28,7 @@ type BreakdownDetail = {
   repair_cost: number | string;
   technician: string | null;
   status: string;
+  operating_impact: OperatingImpact;
   closed_at: string | null;
   machines: MachineRelation | null;
 };
@@ -52,7 +55,7 @@ function normalizeBreakdown(raw: RawBreakdownDetail): BreakdownDetail {
 }
 
 const BREAKDOWN_SELECT =
-  "id, machine_id, reported_at, symptom, cause, action_taken, downtime_minutes, repair_cost, technician, status, closed_at, machines(machine_code, machine_name)";
+  "id, machine_id, reported_at, symptom, cause, action_taken, downtime_minutes, repair_cost, technician, status, operating_impact, closed_at, machines(machine_code, machine_name)";
 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   open: {
@@ -886,6 +889,7 @@ export default function BreakdownDetailPage() {
 
             <div className="mt-3">
               <StatusBadge status={state.breakdown.status} />
+              <span className="ml-2"><OperatingImpactBadge impact={state.breakdown.operating_impact} /></span>
             </div>
 
             <dl className="mt-3 space-y-1.5 text-sm">
