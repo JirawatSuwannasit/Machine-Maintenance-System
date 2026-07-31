@@ -444,6 +444,9 @@ export default function BreakdownDetailPage() {
     string | null
   >(null);
   const [closeFormError, setCloseFormError] = useState<string | null>(null);
+  const [progressMessage, setProgressMessage] = useState<string | null>(null);
+  const [progressError, setProgressError] = useState<string | null>(null);
+  const [savingProgress, setSavingProgress] = useState(false);
   const [closing, setClosing] = useState(false);
   const [showCloseSuccess, setShowCloseSuccess] = useState(false);
 
@@ -742,6 +745,92 @@ export default function BreakdownDetailPage() {
     }
   }
 
+  async function handleSaveProgress() {
+    if (
+      state.status !== "loaded" ||
+      state.breakdown.status !== "in_progress"
+    ) {
+      return;
+    }
+
+    if (!isOperatingImpact(operatingImpact)) {
+      setOperatingImpactError("กรุณาเลือกผลกระทบต่อการเดินเครื่อง");
+      return;
+    }
+
+    setOperatingImpactError(null);
+    setProgressError(null);
+    setProgressMessage(null);
+    setSavingProgress(true);
+
+    const trimmedCause = cause.trim();
+    const trimmedActionTaken = actionTaken.trim();
+    const { data, error } = await supabase
+      .from("breakdowns")
+      .update({
+        operating_impact: operatingImpact,
+        cause: trimmedCause === "" ? null : trimmedCause,
+        action_taken: trimmedActionTaken === "" ? null : trimmedActionTaken,
+      })
+      .eq("id", state.breakdown.id)
+      .eq("status", "in_progress")
+      .select(BREAKDOWN_SELECT)
+      .maybeSingle();
+
+    if (error) {
+      setProgressError(error.message);
+      setSavingProgress(false);
+      return;
+    }
+
+    if (!data) {
+      const fresh = await supabase
+        .from("breakdowns")
+        .select(BREAKDOWN_SELECT)
+        .eq("id", state.breakdown.id)
+        .maybeSingle();
+
+      if (fresh.error || !fresh.data) {
+        setProgressError(
+          fresh.error?.message ?? "ไม่พบใบงานนี้ กรุณากลับไปหน้ารายการ"
+        );
+      } else {
+        const freshBreakdown = normalizeBreakdown(
+          fresh.data as unknown as RawBreakdownDetail
+        );
+        setState({
+          status: "loaded",
+          breakdown: freshBreakdown,
+          partsCost: state.partsCost,
+          linkedParts: state.linkedParts,
+        });
+        setCause(freshBreakdown.cause ?? "");
+        setActionTaken(freshBreakdown.action_taken ?? "");
+        setOperatingImpact(freshBreakdown.operating_impact);
+        setProgressError(
+          "ไม่สามารถบันทึกความคืบหน้าได้ เนื่องจากสถานะใบงานถูกเปลี่ยนโดยผู้ใช้อื่น ระบบแสดงข้อมูลล่าสุดแล้ว"
+        );
+      }
+      setSavingProgress(false);
+      return;
+    }
+
+    const updated = normalizeBreakdown(data as unknown as RawBreakdownDetail);
+    setState({
+      status: "loaded",
+      breakdown: updated,
+      partsCost: state.partsCost,
+      linkedParts: state.linkedParts,
+    });
+    setCause(updated.cause ?? "");
+    setActionTaken(updated.action_taken ?? "");
+    setOperatingImpact(updated.operating_impact);
+    setCauseError(null);
+    setActionTakenError(null);
+    setProgressMessage("บันทึกความคืบหน้าเรียบร้อยแล้ว");
+    setSavingProgress(false);
+  }
+
   async function handleCancelBreakdown() {
     if (state.status !== "loaded") return;
 
@@ -938,6 +1027,18 @@ export default function BreakdownDetailPage() {
               >
                 ✕
               </button>
+            </div>
+          )}
+
+          {progressMessage && (
+            <div className="mb-4 rounded-md border border-green-300 bg-green-50 p-3 text-sm text-green-800">
+              {progressMessage}
+            </div>
+          )}
+
+          {progressError && (
+            <div className="mb-4 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+              {progressError}
             </div>
           )}
 
@@ -1229,13 +1330,25 @@ export default function BreakdownDetailPage() {
                 </div>
               )}
 
-              <button
-                type="submit"
-                disabled={closing}
-                className="flex min-h-[48px] w-full items-center justify-center rounded-md bg-accent px-6 text-base font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {closing ? "กำลังบันทึก..." : "ปิดงาน"}
-              </button>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={handleSaveProgress}
+                  disabled={savingProgress || closing}
+                  className="flex min-h-[48px] w-full items-center justify-center rounded-md border border-accent px-4 text-base font-medium text-accent hover:bg-accent/5 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {savingProgress
+                    ? "กำลังบันทึก..."
+                    : "บันทึกความคืบหน้า"}
+                </button>
+                <button
+                  type="submit"
+                  disabled={closing || savingProgress}
+                  className="flex min-h-[48px] w-full items-center justify-center rounded-md bg-accent px-6 text-base font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {closing ? "กำลังบันทึก..." : "ปิดงาน"}
+                </button>
+              </div>
             </form>
           )}
 
