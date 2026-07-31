@@ -4,7 +4,11 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import OperatingImpactBadge from "@/components/breakdowns/OperatingImpactBadge";
-import type { OperatingImpact } from "@/lib/operatingImpact";
+import MultiSelectFilter from "@/components/MultiSelectFilter";
+import {
+  OPERATING_IMPACT_LABELS,
+  type OperatingImpact,
+} from "@/lib/operatingImpact";
 
 type MachineRelation = { machine_code: string; machine_name: string };
 
@@ -166,8 +170,9 @@ export default function BreakdownsPage() {
   const [breakdowns, setBreakdowns] = useState<BreakdownRow[]>([]);
   const [machineOptions, setMachineOptions] = useState<MachineOption[]>([]);
 
-  const [statusFilter, setStatusFilter] = useState("");
-  const [machineFilter, setMachineFilter] = useState("");
+  const [statusFilters, setStatusFilters] = useState<string[]>([]);
+  const [machineFilters, setMachineFilters] = useState<string[]>([]);
+  const [impactFilters, setImpactFilters] = useState<OperatingImpact[]>([]);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
@@ -197,8 +202,18 @@ export default function BreakdownsPage() {
 
   const filteredBreakdowns = useMemo(() => {
     return breakdowns.filter((breakdown) => {
-      if (statusFilter && breakdown.status !== statusFilter) return false;
-      if (machineFilter && breakdown.machine_id !== machineFilter) return false;
+      if (statusFilters.length > 0 && !statusFilters.includes(breakdown.status))
+        return false;
+      if (
+        machineFilters.length > 0 &&
+        !machineFilters.includes(breakdown.machine_id)
+      )
+        return false;
+      if (
+        impactFilters.length > 0 &&
+        !impactFilters.includes(breakdown.operating_impact)
+      )
+        return false;
       if (dateFrom || dateTo) {
         const reportedDate = toLocalDateString(breakdown.reported_at);
         if (dateFrom && reportedDate < dateFrom) return false;
@@ -206,14 +221,19 @@ export default function BreakdownsPage() {
       }
       return true;
     });
-  }, [breakdowns, statusFilter, machineFilter, dateFrom, dateTo]);
+  }, [breakdowns, statusFilters, machineFilters, impactFilters, dateFrom, dateTo]);
 
   const hasActiveFilter =
-    statusFilter !== "" || machineFilter !== "" || dateFrom !== "" || dateTo !== "";
+    statusFilters.length > 0 ||
+    machineFilters.length > 0 ||
+    impactFilters.length > 0 ||
+    dateFrom !== "" ||
+    dateTo !== "";
 
   function handleClearFilters() {
-    setStatusFilter("");
-    setMachineFilter("");
+    setStatusFilters([]);
+    setMachineFilters([]);
+    setImpactFilters([]);
     setDateFrom("");
     setDateTo("");
   }
@@ -264,39 +284,43 @@ export default function BreakdownsPage() {
         <>
           {/* Filters */}
           <div className="mt-4 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end">
-            <div>
-              <label className="block text-xs font-medium text-primary/60">
-                สถานะ
-              </label>
-              <select
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value)}
-                className="mt-1 min-h-[44px] w-full rounded-md border border-primary/20 px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent md:w-auto"
-              >
-                <option value="">ทุกสถานะ</option>
-                <option value="open">รอรับงาน</option>
-                <option value="in_progress">กำลังซ่อม</option>
-                <option value="closed">ปิดงานแล้ว</option>
-              </select>
-            </div>
+            <MultiSelectFilter
+              label="สถานะ"
+              allLabel="ทุกสถานะ"
+              options={Object.entries(STATUS_BADGE).map(([value, info]) => ({
+                value,
+                label: info.label,
+              }))}
+              selected={statusFilters}
+              onChange={setStatusFilters}
+              className="md:min-w-44"
+            />
 
-            <div>
-              <label className="block text-xs font-medium text-primary/60">
-                เครื่องจักร
-              </label>
-              <select
-                value={machineFilter}
-                onChange={(event) => setMachineFilter(event.target.value)}
-                className="mt-1 min-h-[44px] w-full rounded-md border border-primary/20 px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent md:w-auto"
-              >
-                <option value="">ทุกเครื่อง</option>
-                {machineOptions.map((machine) => (
-                  <option key={machine.id} value={machine.id}>
-                    {machine.machine_code} — {machine.machine_name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <MultiSelectFilter
+              label="เครื่องจักร"
+              allLabel="ทุกเครื่อง"
+              options={machineOptions.map((machine) => ({
+                value: machine.id,
+                label: `${machine.machine_code} — ${machine.machine_name}`,
+              }))}
+              selected={machineFilters}
+              onChange={setMachineFilters}
+              className="md:min-w-64"
+            />
+
+            <MultiSelectFilter
+              label="ผลต่อการเดินเครื่อง"
+              allLabel="ทุกระดับ"
+              options={(["running", "limited", "stopped"] as OperatingImpact[]).map(
+                (impact) => ({
+                  value: impact,
+                  label: OPERATING_IMPACT_LABELS[impact],
+                })
+              )}
+              selected={impactFilters}
+              onChange={(values) => setImpactFilters(values as OperatingImpact[])}
+              className="md:min-w-56"
+            />
 
             <div>
               <label className="block text-xs font-medium text-primary/60">
