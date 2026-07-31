@@ -5,16 +5,32 @@ export const OPERATING_IMPACT_OPTIONS: Array<{
   label: string;
   description: string;
 }> = [
-  { value: "running", label: "เดินเครื่องได้", description: "เครื่องจักรยังทำงานได้ตามปกติ" },
-  { value: "limited", label: "เดินเครื่องได้แบบจำกัด", description: "ยังใช้งานได้ แต่มีข้อจำกัด" },
-  { value: "stopped", label: "หยุดเครื่อง", description: "ไม่สามารถเดินเครื่องได้" },
+  {
+    value: "running",
+    label: "ยังใช้งานได้",
+    description: "มีอาการผิดปกติ แต่เครื่องยังสามารถทำงานต่อได้",
+  },
+  {
+    value: "limited",
+    label: "เดินเครื่องได้แบบจำกัด",
+    description: "เครื่องยังทำงานได้ แต่มีข้อจำกัดหรือประสิทธิภาพลดลง",
+  },
+  {
+    value: "stopped",
+    label: "เครื่องหยุด / ใช้งานไม่ได้",
+    description: "ต้องหยุดเครื่องหรือไม่สามารถใช้งานได้",
+  },
 ];
 
 export const OPERATING_IMPACT_LABELS: Record<OperatingImpact, string> = {
-  running: "เดินเครื่องได้",
+  running: "ยังใช้งานได้",
   limited: "เดินเครื่องได้แบบจำกัด",
-  stopped: "หยุดเครื่อง",
+  stopped: "เครื่องหยุด / ใช้งานไม่ได้",
 };
+
+export function isOperatingImpact(value: string): value is OperatingImpact {
+  return value === "running" || value === "limited" || value === "stopped";
+}
 
 export const OPERATING_IMPACT_BADGE_CLASSES: Record<OperatingImpact, string> = {
   running: "bg-green-100 text-green-800 border border-green-200",
