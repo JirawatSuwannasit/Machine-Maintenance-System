@@ -9,6 +9,12 @@ import PartsUsedEditor, {
   type LinkedPart,
   type PartLine,
 } from "@/components/breakdowns/PartsUsedEditor";
+import OperatingImpactBadge from "@/components/breakdowns/OperatingImpactBadge";
+import {
+  isOperatingImpact,
+  OPERATING_IMPACT_OPTIONS,
+  type OperatingImpact,
+} from "@/lib/operatingImpact";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -26,6 +32,7 @@ type BreakdownDetail = {
   repair_cost: number | string;
   technician: string | null;
   status: string;
+  operating_impact: OperatingImpact;
   closed_at: string | null;
   machines: MachineRelation | null;
 };
@@ -52,7 +59,7 @@ function normalizeBreakdown(raw: RawBreakdownDetail): BreakdownDetail {
 }
 
 const BREAKDOWN_SELECT =
-  "id, machine_id, reported_at, symptom, cause, action_taken, downtime_minutes, repair_cost, technician, status, closed_at, machines(machine_code, machine_name)";
+  "id, machine_id, reported_at, symptom, cause, action_taken, downtime_minutes, repair_cost, technician, status, operating_impact, closed_at, machines(machine_code, machine_name)";
 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   open: {
@@ -80,6 +87,57 @@ function StatusBadge({ status }: { status: string }) {
     >
       {info.label}
     </span>
+  );
+}
+
+function OperatingImpactField({
+  value,
+  onChange,
+  error,
+}: {
+  value: OperatingImpact | "";
+  onChange: (value: OperatingImpact) => void;
+  error: string | null;
+}) {
+  return (
+    <fieldset>
+      <legend className="text-sm font-medium">
+        ผลกระทบต่อการเดินเครื่อง*
+      </legend>
+      <div className="mt-2 space-y-2">
+        {OPERATING_IMPACT_OPTIONS.map((option) => {
+          const selected = value === option.value;
+          return (
+            <label
+              key={option.value}
+              className={`flex min-h-[64px] cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
+                selected
+                  ? "border-accent bg-accent/5 ring-1 ring-accent"
+                  : "border-primary/15 bg-white hover:bg-surface"
+              }`}
+            >
+              <input
+                type="radio"
+                name="operating_impact"
+                value={option.value}
+                checked={selected}
+                onChange={() => onChange(option.value)}
+                className="mt-1 h-5 w-5 shrink-0 accent-accent"
+              />
+              <span>
+                <span className="block text-sm font-medium text-primary">
+                  {option.label}
+                </span>
+                <span className="mt-0.5 block text-xs leading-5 text-primary/60">
+                  {option.description}
+                </span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      {error && <p className="mt-1 text-sm text-red-700">{error}</p>}
+    </fieldset>
   );
 }
 
@@ -373,13 +431,22 @@ export default function BreakdownDetailPage() {
   const [downtimeMinutes, setDowntimeMinutes] = useState<number | "">(0);
   const [repairCost, setRepairCost] = useState<number | "">(0);
   const [closeTechnician, setCloseTechnician] = useState("");
+  const [operatingImpact, setOperatingImpact] = useState<OperatingImpact | "">(
+    ""
+  );
 
   const [causeError, setCauseError] = useState<string | null>(null);
   const [actionTakenError, setActionTakenError] = useState<string | null>(
     null
   );
   const [downtimeError, setDowntimeError] = useState<string | null>(null);
+  const [operatingImpactError, setOperatingImpactError] = useState<
+    string | null
+  >(null);
   const [closeFormError, setCloseFormError] = useState<string | null>(null);
+  const [progressMessage, setProgressMessage] = useState<string | null>(null);
+  const [progressError, setProgressError] = useState<string | null>(null);
+  const [savingProgress, setSavingProgress] = useState(false);
   const [closing, setClosing] = useState(false);
   const [showCloseSuccess, setShowCloseSuccess] = useState(false);
 
@@ -457,6 +524,7 @@ export default function BreakdownDetailPage() {
           : 0
       );
       setCloseTechnician(breakdown.technician ?? "");
+      setOperatingImpact(breakdown.operating_impact);
       setPartLines(existingParts.lines);
       setOriginalPartLines(existingParts.lines);
 
@@ -516,6 +584,12 @@ export default function BreakdownDetailPage() {
     const trimmedActionTaken = actionTaken.trim();
 
     let hasError = false;
+    if (!isOperatingImpact(operatingImpact)) {
+      setOperatingImpactError("กรุณาเลือกผลกระทบต่อการเดินเครื่อง");
+      hasError = true;
+    } else {
+      setOperatingImpactError(null);
+    }
     if (trimmedCause === "") {
       setCauseError("กรุณากรอกสาเหตุ");
       hasError = true;
@@ -572,6 +646,7 @@ export default function BreakdownDetailPage() {
         downtime_minutes: downtimeValue,
         repair_cost: repairCostValue,
         technician: trimmedCloseTechnician === "" ? null : trimmedCloseTechnician,
+        operating_impact: operatingImpact,
       })
       .eq("id", state.breakdown.id)
       .select(BREAKDOWN_SELECT)
@@ -668,6 +743,92 @@ export default function BreakdownDetailPage() {
     } else {
       setShowCloseSuccess(true);
     }
+  }
+
+  async function handleSaveProgress() {
+    if (
+      state.status !== "loaded" ||
+      state.breakdown.status !== "in_progress"
+    ) {
+      return;
+    }
+
+    if (!isOperatingImpact(operatingImpact)) {
+      setOperatingImpactError("กรุณาเลือกผลกระทบต่อการเดินเครื่อง");
+      return;
+    }
+
+    setOperatingImpactError(null);
+    setProgressError(null);
+    setProgressMessage(null);
+    setSavingProgress(true);
+
+    const trimmedCause = cause.trim();
+    const trimmedActionTaken = actionTaken.trim();
+    const { data, error } = await supabase
+      .from("breakdowns")
+      .update({
+        operating_impact: operatingImpact,
+        cause: trimmedCause === "" ? null : trimmedCause,
+        action_taken: trimmedActionTaken === "" ? null : trimmedActionTaken,
+      })
+      .eq("id", state.breakdown.id)
+      .eq("status", "in_progress")
+      .select(BREAKDOWN_SELECT)
+      .maybeSingle();
+
+    if (error) {
+      setProgressError(error.message);
+      setSavingProgress(false);
+      return;
+    }
+
+    if (!data) {
+      const fresh = await supabase
+        .from("breakdowns")
+        .select(BREAKDOWN_SELECT)
+        .eq("id", state.breakdown.id)
+        .maybeSingle();
+
+      if (fresh.error || !fresh.data) {
+        setProgressError(
+          fresh.error?.message ?? "ไม่พบใบงานนี้ กรุณากลับไปหน้ารายการ"
+        );
+      } else {
+        const freshBreakdown = normalizeBreakdown(
+          fresh.data as unknown as RawBreakdownDetail
+        );
+        setState({
+          status: "loaded",
+          breakdown: freshBreakdown,
+          partsCost: state.partsCost,
+          linkedParts: state.linkedParts,
+        });
+        setCause(freshBreakdown.cause ?? "");
+        setActionTaken(freshBreakdown.action_taken ?? "");
+        setOperatingImpact(freshBreakdown.operating_impact);
+        setProgressError(
+          "ไม่สามารถบันทึกความคืบหน้าได้ เนื่องจากสถานะใบงานถูกเปลี่ยนโดยผู้ใช้อื่น ระบบแสดงข้อมูลล่าสุดแล้ว"
+        );
+      }
+      setSavingProgress(false);
+      return;
+    }
+
+    const updated = normalizeBreakdown(data as unknown as RawBreakdownDetail);
+    setState({
+      status: "loaded",
+      breakdown: updated,
+      partsCost: state.partsCost,
+      linkedParts: state.linkedParts,
+    });
+    setCause(updated.cause ?? "");
+    setActionTaken(updated.action_taken ?? "");
+    setOperatingImpact(updated.operating_impact);
+    setCauseError(null);
+    setActionTakenError(null);
+    setProgressMessage("บันทึกความคืบหน้าเรียบร้อยแล้ว");
+    setSavingProgress(false);
   }
 
   async function handleCancelBreakdown() {
@@ -869,6 +1030,18 @@ export default function BreakdownDetailPage() {
             </div>
           )}
 
+          {progressMessage && (
+            <div className="mb-4 rounded-md border border-green-300 bg-green-50 p-3 text-sm text-green-800">
+              {progressMessage}
+            </div>
+          )}
+
+          {progressError && (
+            <div className="mb-4 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+              {progressError}
+            </div>
+          )}
+
           {/* Always-visible header */}
           <div className="rounded-lg border border-primary/10 bg-white p-4 shadow-sm">
             <Link
@@ -886,6 +1059,16 @@ export default function BreakdownDetailPage() {
 
             <div className="mt-3">
               <StatusBadge status={state.breakdown.status} />
+              <span className="ml-2">
+                <OperatingImpactBadge
+                  impact={
+                    state.breakdown.status === "in_progress" &&
+                    isOperatingImpact(operatingImpact)
+                      ? operatingImpact
+                      : state.breakdown.operating_impact
+                  }
+                />
+              </span>
             </div>
 
             <dl className="mt-3 space-y-1.5 text-sm">
@@ -1007,6 +1190,15 @@ export default function BreakdownDetailPage() {
               onSubmit={handleCloseSubmit}
               className="mt-4 space-y-4 rounded-lg border border-primary/10 bg-white p-4"
             >
+              <OperatingImpactField
+                value={operatingImpact}
+                onChange={(value) => {
+                  setOperatingImpact(value);
+                  setOperatingImpactError(null);
+                }}
+                error={operatingImpactError}
+              />
+
               <div>
                 <label htmlFor="cause" className="block text-sm font-medium">
                   สาเหตุ*
@@ -1124,13 +1316,25 @@ export default function BreakdownDetailPage() {
                 </div>
               )}
 
-              <button
-                type="submit"
-                disabled={closing}
-                className="flex min-h-[48px] w-full items-center justify-center rounded-md bg-accent px-6 text-base font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {closing ? "กำลังบันทึก..." : "ปิดงาน"}
-              </button>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={handleSaveProgress}
+                  disabled={savingProgress || closing}
+                  className="flex min-h-[48px] w-full items-center justify-center rounded-md border border-accent px-4 text-base font-medium text-accent hover:bg-accent/5 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {savingProgress
+                    ? "กำลังบันทึก..."
+                    : "บันทึกความคืบหน้า"}
+                </button>
+                <button
+                  type="submit"
+                  disabled={closing || savingProgress}
+                  className="flex min-h-[48px] w-full items-center justify-center rounded-md bg-accent px-6 text-base font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {closing ? "กำลังบันทึก..." : "ปิดงาน"}
+                </button>
+              </div>
             </form>
           )}
 

@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import OperatingImpactBadge from "@/components/breakdowns/OperatingImpactBadge";
+import type { OperatingImpact } from "@/lib/operatingImpact";
 
 type BreakdownHistoryTabProps = {
   machineId: string;
@@ -16,6 +18,7 @@ type BreakdownHistoryEntry = {
   downtime_minutes: number | null;
   repair_cost: number | string;
   status: string;
+  operating_impact: OperatingImpact;
 };
 
 type FetchResult =
@@ -80,7 +83,7 @@ function formatMoneyThai(value: number | string): string {
 async function fetchBreakdownHistory(machineId: string): Promise<FetchResult> {
   const { data, error } = await supabase
     .from("breakdowns")
-    .select("id, reported_at, symptom, cause, downtime_minutes, repair_cost, status")
+    .select("id, reported_at, symptom, cause, downtime_minutes, repair_cost, status, operating_impact")
     .eq("machine_id", machineId)
     .order("reported_at", { ascending: false });
 
@@ -163,6 +166,7 @@ export default function BreakdownHistoryTab({
               >
                 <div className="flex items-center justify-between gap-2">
                   <StatusBadge status={entry.status} />
+                  <OperatingImpactBadge impact={entry.operating_impact} />
                   <span className="text-xs text-primary/60">
                     {formatDateThai(entry.reported_at)}
                   </span>
