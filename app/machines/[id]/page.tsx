@@ -90,7 +90,7 @@ export default function MachineProfilePage() {
             .maybeSingle(),
           supabase
             .from("breakdowns")
-            .select("id")
+            .select("operating_impact")
             .eq("machine_id", params.id)
             .in("status", ["open", "in_progress"]),
           supabase
@@ -130,7 +130,7 @@ export default function MachineProfilePage() {
         return;
       }
 
-      const hasOpenBreakdown = (breakdownsRes.data ?? []).length > 0;
+      const unresolvedBreakdownImpacts = (breakdownsRes.data ?? []).map((row) => row.operating_impact);
       const dueDates = [
         ...(pmPlansRes.data ?? []).map(
           (row: { next_due_date: string }) => row.next_due_date
@@ -143,7 +143,7 @@ export default function MachineProfilePage() {
       const machine = machineRes.data as MachineRecord;
       const computedStatus = computeMachineStatus(
         machine.status,
-        hasOpenBreakdown,
+        unresolvedBreakdownImpacts,
         dueDates
       );
 

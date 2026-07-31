@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import OperatingImpactBadge from "@/components/breakdowns/OperatingImpactBadge";
+import type { OperatingImpact } from "@/lib/operatingImpact";
 
 type MachineRelation = { machine_code: string; machine_name: string };
 
@@ -13,6 +15,7 @@ type BreakdownRow = {
   symptom: string;
   downtime_minutes: number | null;
   status: string;
+  operating_impact: OperatingImpact;
   machines: MachineRelation | null;
 };
 
@@ -71,7 +74,7 @@ async function fetchBreakdownsData(): Promise<FetchResult> {
     supabase
       .from("breakdowns")
       .select(
-        "id, machine_id, reported_at, symptom, downtime_minutes, status, machines(machine_code, machine_name)"
+        "id, machine_id, reported_at, symptom, downtime_minutes, status, operating_impact, machines(machine_code, machine_name)"
       )
       // PostgREST can't order by a custom status-rank expression, only real
       // columns. So the query orders by the easy part (newest first), and
@@ -343,6 +346,7 @@ export default function BreakdownsPage() {
                   <thead>
                     <tr className="border-b border-primary/10 text-left text-primary/60">
                       <th className="py-2 pr-4 font-medium">สถานะ</th>
+                      <th className="py-2 pr-4 font-medium">ผลต่อการเดินเครื่อง</th>
                       <th className="py-2 pr-4 font-medium">เครื่องจักร</th>
                       <th className="py-2 pr-4 font-medium">อาการเสีย</th>
                       <th className="py-2 pr-4 font-medium">วันที่แจ้ง</th>
@@ -366,6 +370,11 @@ export default function BreakdownsPage() {
                               className="flex items-center px-2 py-3"
                             >
                               <StatusBadge status={breakdown.status} />
+                            </Link>
+                          </td>
+                          <td className="p-0">
+                            <Link href={`/breakdowns/${breakdown.id}`} className="flex items-center px-2 py-3">
+                              <OperatingImpactBadge impact={breakdown.operating_impact} />
                             </Link>
                           </td>
                           <td className="p-0">
@@ -430,6 +439,7 @@ export default function BreakdownsPage() {
                     >
                       <div className="flex items-center justify-between gap-2">
                         <StatusBadge status={breakdown.status} />
+                        <OperatingImpactBadge impact={breakdown.operating_impact} />
                         <span className="text-xs text-primary/60">
                           {formatDateTimeThai(breakdown.reported_at)}
                         </span>

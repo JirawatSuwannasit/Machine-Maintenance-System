@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import BreakdownForm, {
   type BreakdownFormValues,
 } from "@/components/breakdowns/BreakdownForm";
+import type { OperatingImpact } from "@/lib/operatingImpact";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -18,6 +19,7 @@ type BreakdownEditRow = {
   symptom: string;
   technician: string | null;
   status: string;
+  operating_impact: OperatingImpact;
 };
 
 // Inverse of BreakdownForm's datetimeLocalToIso: a UTC ISO timestamp -> the
@@ -55,7 +57,7 @@ export default function EditBreakdownPage() {
 
       const { data, error } = await supabase
         .from("breakdowns")
-        .select("id, machine_id, reported_at, symptom, technician, status")
+        .select("id, machine_id, reported_at, symptom, technician, status, operating_impact")
         .eq("id", params.id)
         .maybeSingle();
 
@@ -112,6 +114,7 @@ export default function EditBreakdownPage() {
         symptom: values.symptom,
         reported_at: values.reportedAtIso,
         technician: values.technician,
+        operating_impact: values.operatingImpact,
       })
       .eq("id", state.row.id)
       .eq("status", "open")
@@ -181,6 +184,7 @@ export default function EditBreakdownPage() {
           initialSymptom={state.row.symptom}
           initialReportedAt={isoToDatetimeLocal(state.row.reported_at)}
           initialTechnician={state.row.technician ?? ""}
+          initialOperatingImpact={state.row.operating_impact}
           submitLabel="บันทึกการแก้ไข"
           onCancel={() => router.push(`/breakdowns/${state.row.id}`)}
           onSubmit={handleSubmit}
