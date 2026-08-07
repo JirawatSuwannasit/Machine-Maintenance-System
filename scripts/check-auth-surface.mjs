@@ -23,6 +23,14 @@ const sourceFiles = [
   "middleware.ts",
 ];
 
+const redirectConfig = readFileSync("next.config.mjs", "utf8");
+const cancelledRouteRedirects = [
+  'source: "/forgot-password"',
+  'source: "/update-password"',
+  'source: "/auth/:path*"',
+  'source: "/signup"',
+];
+
 const failures = [];
 const loginSource = readFileSync("app/login/page.tsx", "utf8");
 
@@ -33,6 +41,12 @@ if (loginSource.includes("ลืมรหัสผ่าน?") || loginSource.in
 for (const route of removedRoutes) {
   if (existsSync(route)) {
     failures.push(`ยังพบเส้นทางที่ยกเลิกแล้ว: ${route}`);
+  }
+}
+
+for (const redirect of cancelledRouteRedirects) {
+  if (!redirectConfig.includes(redirect)) {
+    failures.push(`ไม่พบ redirect สำหรับเส้นทางที่ยกเลิกแล้ว: ${redirect}`);
   }
 }
 
