@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
 function mapErrorMessage(message: string): string {
@@ -66,6 +67,14 @@ export default function LoginPage() {
               onChange={(event) => setEmail(event.target.value)}
               className="mt-1 block w-full min-h-[44px] rounded-md border border-primary/20 px-3 py-2 text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             />
+            <div className="mt-2 text-right">
+              <Link
+                href="/forgot-password"
+                className="text-sm font-medium text-accent hover:underline focus:outline-none focus:ring-2 focus:ring-accent"
+              >
+                ลืมรหัสผ่าน?
+              </Link>
+            </div>
           </div>
 
           <div>
