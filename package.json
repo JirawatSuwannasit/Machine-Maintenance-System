@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "check:auth": "node scripts/check-auth-surface.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
