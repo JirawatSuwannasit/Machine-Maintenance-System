@@ -10,6 +10,7 @@ import {
   Package,
   BarChart3,
   LogOut,
+  KeyRound,
   type LucideIcon,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -73,6 +74,14 @@ export default function Nav() {
           bottom nav so the bottom nav stays exactly 5 items. */}
       <div className="fixed inset-x-0 top-0 z-50 flex h-12 items-center justify-between gap-2 bg-primary px-4 text-white md:hidden">
         <span className="min-w-0 flex-1 truncate text-sm">{userEmail}</span>
+        <Link
+          href="/change-password"
+          aria-label="เปลี่ยนรหัสผ่าน"
+          title="เปลี่ยนรหัสผ่าน"
+          className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-md text-white/90 hover:bg-white/10"
+        >
+          <KeyRound size={17} aria-hidden="true" />
+        </Link>
         <button
           type="button"
           onClick={handleLogout}
@@ -113,6 +122,13 @@ export default function Nav() {
         </nav>
         <div className="border-t border-white/10 p-3">
           <p className="truncate text-xs text-white/70">{userEmail}</p>
+          <Link
+            href="/change-password"
+            className="mt-2 flex min-h-[44px] w-full items-center gap-2 rounded-md px-3 text-sm text-white/80 hover:bg-white/10 hover:text-white"
+          >
+            <KeyRound size={18} aria-hidden="true" />
+            <span>เปลี่ยนรหัสผ่าน</span>
+          </Link>
           <button
             type="button"
             onClick={handleLogout}
