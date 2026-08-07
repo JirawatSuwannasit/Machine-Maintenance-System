@@ -20,6 +20,11 @@ export default function RootLayout({
   return (
     <html lang="th">
       <body className="bg-surface text-primary">
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){if(location.pathname!=="/")return;var p=new URLSearchParams(location.hash.slice(1));if(p.get("type")==="invite"&&p.has("access_token")&&p.has("refresh_token")){location.replace("/update-password"+location.hash);}})();`,
+          }}
+        />
         <AppShell>{children}</AppShell>
       </body>
     </html>
