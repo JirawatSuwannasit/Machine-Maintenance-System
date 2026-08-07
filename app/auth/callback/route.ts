@@ -6,7 +6,11 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const tokenHash = url.searchParams.get("token_hash");
-  const type = url.searchParams.get("type") as EmailOtpType | null;
+  const rawType = url.searchParams.get("type");
+  const type =
+    rawType === "invite" || rawType === "recovery"
+      ? (rawType as EmailOtpType)
+      : null;
   const destination = new URL("/update-password", url.origin);
   const supabase = createSupabaseServerClient();
 
