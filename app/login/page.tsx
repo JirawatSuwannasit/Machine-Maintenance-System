@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
@@ -17,6 +17,7 @@ function mapErrorMessage(message: string): string {
 
 export default function LoginPage() {
   const router = useRouter();
+  const forgotPasswordDialogRef = useRef<HTMLDialogElement>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -68,12 +69,13 @@ export default function LoginPage() {
               className="mt-1 block w-full min-h-[44px] rounded-md border border-primary/20 px-3 py-2 text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             />
             <div className="mt-2 text-right">
-              <Link
-                href="/forgot-password"
-                className="text-sm font-medium text-accent hover:underline focus:outline-none focus:ring-2 focus:ring-accent"
+              <button
+                type="button"
+                onClick={() => forgotPasswordDialogRef.current?.showModal()}
+                className="min-h-[44px] rounded-md px-2 text-sm font-medium text-accent hover:underline focus:outline-none focus:ring-2 focus:ring-accent"
               >
                 ลืมรหัสผ่าน?
-              </Link>
+              </button>
             </div>
           </div>
 
@@ -114,6 +116,31 @@ export default function LoginPage() {
           ผู้ดูแลระบบเป็นผู้สร้างบัญชีให้
         </p>
       </div>
+
+      <dialog
+        ref={forgotPasswordDialogRef}
+        aria-labelledby="forgot-password-title"
+        aria-describedby="forgot-password-description"
+        className="w-[calc(100%-2rem)] max-w-sm rounded-lg bg-white p-0 text-primary shadow-lg backdrop:bg-primary/40"
+      >
+        <div className="p-6 text-center">
+          <h2 id="forgot-password-title" className="text-xl font-bold">
+            ลืมรหัสผ่าน?
+          </h2>
+          <p id="forgot-password-description" className="mt-3 text-sm text-primary/70">
+            กรุณาติดต่อผู้ดูแลระบบเพื่อขอเปลี่ยนรหัสผ่าน
+          </p>
+          <form method="dialog" className="mt-6">
+            <button
+              type="submit"
+              autoFocus
+              className="min-h-[44px] w-full rounded-md bg-accent px-4 py-2 text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2"
+            >
+              ปิด
+            </button>
+          </form>
+        </div>
+      </dialog>
     </div>
   );
 }

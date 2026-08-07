@@ -34,8 +34,16 @@ const cancelledRouteRedirects = [
 const failures = [];
 const loginSource = readFileSync("app/login/page.tsx", "utf8");
 
-if (loginSource.includes("ลืมรหัสผ่าน?") || loginSource.includes("/forgot-password")) {
-  failures.push("หน้าเข้าสู่ระบบยังมีลิงก์ลืมรหัสผ่าน");
+if (!loginSource.includes("ลืมรหัสผ่าน?")) {
+  failures.push("หน้าเข้าสู่ระบบไม่มีปุ่มข้อมูลเมื่อลืมรหัสผ่าน");
+}
+
+if (!loginSource.includes("กรุณาติดต่อผู้ดูแลระบบเพื่อขอเปลี่ยนรหัสผ่าน")) {
+  failures.push("กล่องข้อความลืมรหัสผ่านไม่มีคำแนะนำให้ติดต่อผู้ดูแลระบบ");
+}
+
+if (loginSource.includes('href="/forgot-password"')) {
+  failures.push("ปุ่มลืมรหัสผ่านต้องไม่ลิงก์ไป /forgot-password");
 }
 
 for (const route of removedRoutes) {
@@ -64,4 +72,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log("ตรวจสอบแล้ว: ไม่มีหน้าสมัครสมาชิกหรือลิงก์กู้รหัสผ่าน");
+console.log("ตรวจสอบแล้ว: ปุ่มลืมรหัสผ่านเป็นข้อมูลเท่านั้นและไม่มีระบบกู้รหัสผ่าน");
