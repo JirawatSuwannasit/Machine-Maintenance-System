@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import Nav from "@/components/Nav";
 
-// Hides the sidebar/bottom-nav (and its layout offset on <main>) on /login,
+// Hides authenticated navigation on the public login screen.
 // without touching the route structure of any other page. A route group
 // would need to move every existing page under app/ into a new folder;
 // this achieves the same isolation with a single new client component.
