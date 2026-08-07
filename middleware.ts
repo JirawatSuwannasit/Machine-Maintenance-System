@@ -50,6 +50,12 @@ export async function middleware(request: NextRequest) {
   const isLoginPage = pathname === "/login";
   const isPublicAuthRoute =
     isLoginPage ||
+    // The default Supabase invite template redirects to the Site URL with
+    // credentials in the URL fragment. Fragments never reach middleware; `/`
+    // must load the client bootstrap that transfers the fragment to the public
+    // update-password route. RootAuthGate redirects every other anonymous root
+    // visit to /login before rendering protected application UI.
+    pathname === "/" ||
     pathname === "/forgot-password" ||
     pathname === "/update-password" ||
     pathname.startsWith("/auth/");
