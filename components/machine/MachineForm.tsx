@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { supabase } from "@/lib/supabase";
+import type { AppSection } from "@/components/AccessContext";
 
 export type MachineRecord = {
   id: string;
@@ -30,6 +31,13 @@ type MachineFormProps = {
 const CATEGORY_PRESETS = ["TS", "TH", "TE", "VI", "CMM", "TENSILE", "DURA"];
 const OTHER_CATEGORY_VALUE = "__other__";
 
+const SECTION_OPTIONS = [
+  "REL",
+  "GP",
+  "FA",
+  "CAL",
+] as const satisfies readonly AppSection[];
+
 const STATUS_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "active", label: "ใช้งาน" },
   { value: "inactive", label: "ไม่ใช้งาน" },
@@ -54,6 +62,13 @@ function initialCategorySelect(machine: MachineRecord | undefined): string {
 function initialCategoryOther(machine: MachineRecord | undefined): string {
   if (!machine?.category) return "";
   return CATEGORY_PRESETS.includes(machine.category) ? "" : machine.category;
+}
+
+function initialLocation(machine: MachineRecord | undefined): AppSection | "" {
+  const location = machine?.location;
+  return SECTION_OPTIONS.includes(location as AppSection)
+    ? (location as AppSection)
+    : "";
 }
 
 // Inspects a Postgres unique-violation error to decide which field it
@@ -83,7 +98,9 @@ export default function MachineForm({ machine, onSuccess }: MachineFormProps) {
   const [categoryOther, setCategoryOther] = useState(
     initialCategoryOther(machine)
   );
-  const [location, setLocation] = useState(machine?.location ?? "");
+  const [location, setLocation] = useState<AppSection | "">(
+    initialLocation(machine)
+  );
   const [status, setStatus] = useState(machine?.status ?? "active");
 
   const [manufacturer, setManufacturer] = useState(
@@ -110,6 +127,7 @@ export default function MachineForm({ machine, onSuccess }: MachineFormProps) {
   const [machineNameError, setMachineNameError] = useState<string | null>(
     null
   );
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [serialNoError, setSerialNoError] = useState<string | null>(null);
   const [vendorEmailError, setVendorEmailError] = useState<string | null>(
     null
@@ -145,6 +163,12 @@ export default function MachineForm({ machine, onSuccess }: MachineFormProps) {
       hasError = true;
     } else {
       setMachineNameError(null);
+    }
+    if (!SECTION_OPTIONS.includes(location as AppSection)) {
+      setLocationError("กรุณาเลือกส่วนงาน");
+      hasError = true;
+    } else {
+      setLocationError(null);
     }
     if (trimmedVendorEmail !== "" && !EMAIL_REGEX.test(trimmedVendorEmail)) {
       setVendorEmailError("กรุณากรอกอีเมลให้ถูกต้อง");
@@ -275,15 +299,26 @@ export default function MachineForm({ machine, onSuccess }: MachineFormProps) {
 
         <div>
           <label htmlFor="location" className="block text-sm font-medium">
-            ส่วนงาน
+            ส่วนงาน*
           </label>
-          <input
+          <select
             id="location"
-            type="text"
             value={location}
-            onChange={(event) => setLocation(event.target.value)}
+            onChange={(event) =>
+              setLocation(event.target.value as AppSection | "")
+            }
             className={inputClassName}
-          />
+          >
+            <option value="">-- เลือกส่วนงาน --</option>
+            {SECTION_OPTIONS.map((section) => (
+              <option key={section} value={section}>
+                {section}
+              </option>
+            ))}
+          </select>
+          {locationError && (
+            <p className="mt-1 text-sm text-red-700">{locationError}</p>
+          )}
         </div>
 
         <div>
