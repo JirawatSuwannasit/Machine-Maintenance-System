@@ -16,65 +16,88 @@ drop policy if exists authenticated_full_access on public.part_replacements;
 
 -- Every valid admin/user can read every section. Pending or missing access
 -- rows fail has_app_access() and therefore cannot read maintenance data.
+drop policy if exists machines_read_valid_access on public.machines;
 create policy machines_read_valid_access on public.machines
   for select to authenticated using (public.has_app_access());
+drop policy if exists breakdowns_read_valid_access on public.breakdowns;
 create policy breakdowns_read_valid_access on public.breakdowns
   for select to authenticated using (public.has_app_access());
+drop policy if exists pm_plans_read_valid_access on public.pm_plans;
 create policy pm_plans_read_valid_access on public.pm_plans
   for select to authenticated using (public.has_app_access());
+drop policy if exists pm_records_read_valid_access on public.pm_records;
 create policy pm_records_read_valid_access on public.pm_records
   for select to authenticated using (public.has_app_access());
+drop policy if exists spare_parts_read_valid_access on public.spare_parts;
 create policy spare_parts_read_valid_access on public.spare_parts
   for select to authenticated using (public.has_app_access());
+drop policy if exists machine_parts_read_valid_access on public.machine_parts;
 create policy machine_parts_read_valid_access on public.machine_parts
   for select to authenticated using (public.has_app_access());
+drop policy if exists part_replacements_read_valid_access on public.part_replacements;
 create policy part_replacements_read_valid_access on public.part_replacements
   for select to authenticated using (public.has_app_access());
 
 -- Admin-only master/configuration writes.
+drop policy if exists machines_admin_insert on public.machines;
 create policy machines_admin_insert on public.machines
   for insert to authenticated with check (public.is_app_admin());
+drop policy if exists machines_admin_update on public.machines;
 create policy machines_admin_update on public.machines
   for update to authenticated
   using (public.is_app_admin()) with check (public.is_app_admin());
+drop policy if exists machines_admin_delete on public.machines;
 create policy machines_admin_delete on public.machines
   for delete to authenticated using (public.is_app_admin());
 
+drop policy if exists pm_plans_admin_insert on public.pm_plans;
 create policy pm_plans_admin_insert on public.pm_plans
   for insert to authenticated with check (public.is_app_admin());
+drop policy if exists pm_plans_admin_update on public.pm_plans;
 create policy pm_plans_admin_update on public.pm_plans
   for update to authenticated
   using (public.is_app_admin()) with check (public.is_app_admin());
+drop policy if exists pm_plans_admin_delete on public.pm_plans;
 create policy pm_plans_admin_delete on public.pm_plans
   for delete to authenticated using (public.is_app_admin());
 
+drop policy if exists spare_parts_admin_insert on public.spare_parts;
 create policy spare_parts_admin_insert on public.spare_parts
   for insert to authenticated with check (public.is_app_admin());
+drop policy if exists spare_parts_admin_update on public.spare_parts;
 create policy spare_parts_admin_update on public.spare_parts
   for update to authenticated
   using (public.is_app_admin()) with check (public.is_app_admin());
+drop policy if exists spare_parts_admin_delete on public.spare_parts;
 create policy spare_parts_admin_delete on public.spare_parts
   for delete to authenticated using (public.is_app_admin());
 
+drop policy if exists machine_parts_admin_insert on public.machine_parts;
 create policy machine_parts_admin_insert on public.machine_parts
   for insert to authenticated with check (public.is_app_admin());
+drop policy if exists machine_parts_admin_update on public.machine_parts;
 create policy machine_parts_admin_update on public.machine_parts
   for update to authenticated
   using (public.is_app_admin()) with check (public.is_app_admin());
+drop policy if exists machine_parts_admin_delete on public.machine_parts;
 create policy machine_parts_admin_delete on public.machine_parts
   for delete to authenticated using (public.is_app_admin());
 
 -- Breakdown transactions: admins work everywhere; users only on a machine in
 -- their assigned section. UPDATE checks both old and new machine references.
+drop policy if exists breakdowns_work_insert on public.breakdowns;
 create policy breakdowns_work_insert on public.breakdowns
   for insert to authenticated
   with check (public.can_work_on_machine(machine_id));
+drop policy if exists breakdowns_work_update on public.breakdowns;
 create policy breakdowns_work_update on public.breakdowns
   for update to authenticated
   using (public.can_work_on_machine(machine_id))
   with check (public.can_work_on_machine(machine_id));
+drop policy if exists breakdowns_admin_delete on public.breakdowns;
 create policy breakdowns_admin_delete on public.breakdowns
   for delete to authenticated using (public.is_app_admin());
+drop policy if exists breakdowns_user_delete_open on public.breakdowns;
 create policy breakdowns_user_delete_open on public.breakdowns
   for delete to authenticated
   using (
@@ -85,6 +108,7 @@ create policy breakdowns_user_delete_open on public.breakdowns
 
 -- PM execution is insert-only in the current application. The correlated
 -- plan check prevents forged machine_id/pm_plan_id combinations.
+drop policy if exists pm_records_work_insert on public.pm_records;
 create policy pm_records_work_insert on public.pm_records
   for insert to authenticated
   with check (
@@ -96,14 +120,17 @@ create policy pm_records_work_insert on public.pm_records
         and plan.machine_id = pm_records.machine_id
     )
   );
+drop policy if exists pm_records_admin_update on public.pm_records;
 create policy pm_records_admin_update on public.pm_records
   for update to authenticated
   using (public.is_app_admin()) with check (public.is_app_admin());
+drop policy if exists pm_records_admin_delete on public.pm_records;
 create policy pm_records_admin_delete on public.pm_records
   for delete to authenticated using (public.is_app_admin());
 
 -- Part replacement edit is the existing DELETE-old then INSERT-new workflow.
 -- A supplied breakdown must belong to the same machine.
+drop policy if exists part_replacements_work_insert on public.part_replacements;
 create policy part_replacements_work_insert on public.part_replacements
   for insert to authenticated
   with check (
@@ -118,8 +145,10 @@ create policy part_replacements_work_insert on public.part_replacements
       )
     )
   );
+drop policy if exists part_replacements_work_delete on public.part_replacements;
 create policy part_replacements_work_delete on public.part_replacements
   for delete to authenticated using (public.can_work_on_machine(machine_id));
+drop policy if exists part_replacements_admin_update on public.part_replacements;
 create policy part_replacements_admin_update on public.part_replacements
   for update to authenticated
   using (public.is_app_admin()) with check (public.is_app_admin());
