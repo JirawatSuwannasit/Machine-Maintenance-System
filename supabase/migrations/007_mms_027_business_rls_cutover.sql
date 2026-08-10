@@ -88,12 +88,12 @@ create policy breakdowns_user_delete_open on public.breakdowns
 create policy pm_records_work_insert on public.pm_records
   for insert to authenticated
   with check (
-    public.can_work_on_machine(machine_id)
+    public.can_work_on_machine(pm_records.machine_id)
     and exists (
       select 1
       from public.pm_plans as plan
-      where plan.id = pm_plan_id
-        and plan.machine_id = machine_id
+      where plan.id = pm_records.pm_plan_id
+        and plan.machine_id = pm_records.machine_id
     )
   );
 create policy pm_records_admin_update on public.pm_records
@@ -107,14 +107,14 @@ create policy pm_records_admin_delete on public.pm_records
 create policy part_replacements_work_insert on public.part_replacements
   for insert to authenticated
   with check (
-    public.can_work_on_machine(machine_id)
+    public.can_work_on_machine(part_replacements.machine_id)
     and (
-      breakdown_id is null
+      part_replacements.breakdown_id is null
       or exists (
         select 1
         from public.breakdowns as breakdown
-        where breakdown.id = breakdown_id
-          and breakdown.machine_id = machine_id
+        where breakdown.id = part_replacements.breakdown_id
+          and breakdown.machine_id = part_replacements.machine_id
       )
     )
   );
