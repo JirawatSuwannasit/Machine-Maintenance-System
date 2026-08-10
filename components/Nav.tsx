@@ -14,6 +14,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { useAccess } from "@/components/AccessContext";
 
 type NavItem = {
   label: string;
@@ -37,6 +38,7 @@ function isActive(pathname: string, href: string): boolean {
 }
 
 export default function Nav() {
+  const access = useAccess();
   const pathname = usePathname();
   const router = useRouter();
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -122,6 +124,9 @@ export default function Nav() {
         </nav>
         <div className="border-t border-white/10 p-3">
           <p className="truncate text-xs text-white/70">{userEmail}</p>
+          <p className="mt-1 text-xs font-medium text-white/80">
+            {access.role === "admin" ? "Admin" : `User · ${access.section}`}
+          </p>
           <Link
             href="/change-password"
             className="mt-2 flex min-h-[44px] w-full items-center gap-2 rounded-md px-3 text-sm text-white/80 hover:bg-white/10 hover:text-white"

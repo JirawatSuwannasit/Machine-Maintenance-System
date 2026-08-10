@@ -4,11 +4,12 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, type FormEvent } from "react";
 import { supabase } from "@/lib/supabase";
+import { canWorkOnLocation, useAccess } from "@/components/AccessContext";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type MachineRelation = { machine_code: string; machine_name: string };
+type MachineRelation = { machine_code: string; machine_name: string; location: string | null };
 
 type PmPlanDetail = {
   id: string;
@@ -53,7 +54,7 @@ function normalizePlan(raw: RawPmPlanDetail): PmPlanDetail {
 }
 
 const PM_PLAN_SELECT =
-  "id, machine_id, pm_name, frequency_days, checklist, last_done_date, next_due_date, machines(machine_code, machine_name)";
+  "id, machine_id, pm_name, frequency_days, checklist, last_done_date, next_due_date, machines(machine_code, machine_name, location)";
 
 function formatDateThai(isoDate: string): string {
   const [year, month, day] = isoDate.split("-");
@@ -114,6 +115,7 @@ function LoadingSkeleton() {
 }
 
 function PmRecordPageInner() {
+  const access = useAccess();
   const searchParams = useSearchParams();
   const planId = searchParams.get("plan");
 
@@ -278,6 +280,20 @@ function PmRecordPageInner() {
       <div className="p-4">
         <PageHeading />
         <LoadingSkeleton />
+      </div>
+    );
+  }
+
+  if (
+    state.status === "loaded" &&
+    !canWorkOnLocation(access, state.plan.machines?.location ?? null)
+  ) {
+    return (
+      <div className="p-4">
+        <PageHeading />
+        <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+          คุณดูข้อมูลเครื่องนี้ได้ แต่ทำ PM ได้เฉพาะเครื่องในส่วนงานของคุณ
+        </div>
       </div>
     );
   }
