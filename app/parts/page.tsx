@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useAccess } from "@/components/AccessContext";
 
 type MachineBadge = { machine_code: string };
 
@@ -165,6 +166,7 @@ function LoadingSkeleton() {
 }
 
 export default function PartsPage() {
+  const access = useAccess();
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [parts, setParts] = useState<SparePartRow[]>([]);
@@ -216,12 +218,12 @@ export default function PartsPage() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">อะไหล่</h1>
-        <Link
+        {access.role === "admin" && <Link
           href="/parts/new"
           className="flex min-h-[44px] items-center justify-center whitespace-nowrap rounded-md bg-accent px-4 text-sm font-medium text-white hover:bg-accent/90"
         >
           + เพิ่มอะไหล่
-        </Link>
+        </Link>}
       </div>
 
       {initialLoading ? (
@@ -235,12 +237,12 @@ export default function PartsPage() {
       ) : parts.length === 0 ? (
         <div className="mt-10 flex flex-col items-center gap-4 text-center">
           <p className="text-primary/70">ยังไม่มีอะไหล่ในระบบ</p>
-          <Link
+          {access.role === "admin" && <Link
             href="/parts/new"
             className="flex min-h-[44px] items-center justify-center rounded-md bg-accent px-6 text-sm font-medium text-white hover:bg-accent/90"
           >
             + เพิ่มอะไหล่
-          </Link>
+          </Link>}
         </div>
       ) : (
         <>
