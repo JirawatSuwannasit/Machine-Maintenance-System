@@ -8,6 +8,8 @@ import { computeDueDisplay, formatDateThai, parseIsoDateAsLocalDay } from "@/lib
 
 type PartsTabProps = {
   machineId: string;
+  isAdmin: boolean;
+  canWork: boolean;
 };
 
 type SparePartRelation = {
@@ -172,7 +174,7 @@ type PickerState =
   | { status: "error"; message: string }
   | { status: "loaded"; options: SparePartOption[] };
 
-export default function PartsTab({ machineId }: PartsTabProps) {
+export default function PartsTab({ machineId, isAdmin, canWork }: PartsTabProps) {
   const [state, setState] = useState<TabState>({ status: "loading" });
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
@@ -303,7 +305,7 @@ export default function PartsTab({ machineId }: PartsTabProps) {
     setLinking(false);
   }
 
-  const topButtons = (
+  const topButtons = isAdmin ? (
     <div className="flex flex-wrap gap-3">
       <Link
         href={`/parts/new?machine=${machineId}`}
@@ -319,7 +321,7 @@ export default function PartsTab({ machineId }: PartsTabProps) {
         เลือกจากทะเบียนอะไหล่
       </button>
     </div>
-  );
+  ) : null;
 
   const picker = showPicker && (
     <div className="mt-3 rounded-lg border border-primary/10 bg-white p-4 shadow-sm">
@@ -453,12 +455,12 @@ export default function PartsTab({ machineId }: PartsTabProps) {
                   </dl>
 
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Link
+                    {canWork && <Link
                       href={`/parts/replace?machine=${machineId}&part=${link.part_id}`}
                       className="flex min-h-[40px] flex-1 items-center justify-center rounded-md bg-accent px-4 text-sm font-medium text-white hover:bg-accent/90 sm:flex-none"
                     >
                       บันทึกเปลี่ยน
-                    </Link>
+                    </Link>}
                     <button
                       type="button"
                       onClick={() => toggleExpanded(link.part_id)}

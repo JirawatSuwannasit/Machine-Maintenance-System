@@ -2,7 +2,64 @@
 
 ## การยืนยันตัวตนสำหรับระบบภายใน
 
-ระบบใช้ Supabase Auth ด้วยอีเมลและรหัสผ่าน ไม่มีหน้าสมัครสมาชิกสาธารณะ ผู้ดูแลระบบสร้างบัญชีที่ได้รับอนุญาตจาก Supabase Dashboard เท่านั้น ผู้ใช้ทุกคนที่เข้าสู่ระบบแล้วมีสิทธิ์ใช้งานตาม RLS เดิมเท่ากัน
+ระบบใช้ Supabase Auth ด้วยอีเมลและรหัสผ่าน ไม่มีหน้าสมัครสมาชิกสาธารณะ ผู้ดูแลโครงการสร้างบัญชีจาก Supabase Dashboard เท่านั้น การกำหนดสิทธิ์ของ MMS-027 แยกเป็น 2 ขั้นเพื่อไม่ให้ระบบที่ใช้งานจริงถูกล็อกโดยไม่มีผู้ดูแล
+
+## MMS-027: บทบาทและส่วนงาน
+
+- มีบทบาทแอปพลิเคชันเพียง `admin` และ `user` และมีผู้ใช้ `admin` ได้หลายคน
+- ส่วนงานมีเพียง `REL`, `GP`, `FA`, `CAL` โดยใช้ `machines.location` เป็นแหล่งข้อมูลจริง ไม่สร้างคอลัมน์ส่วนงานซ้ำ
+- `admin` ต้องมี `section = NULL` และทำงานบำรุงรักษาที่ระบบรองรับได้ทุกส่วนงาน
+- `user` ต้องมีส่วนงานหนึ่งค่า ดูข้อมูลทุกส่วนงานได้ แต่เขียนเฉพาะรายการงานบำรุงรักษาของเครื่องในส่วนงานตนเอง
+- บัญชีใหม่เริ่มที่ `role = NULL`, `section = NULL` และยังไม่มีสิทธิ์ข้อมูลบำรุงรักษาจนกว่าจะกำหนดด้วยตนเอง
+- กำหนดบทบาท/ส่วนงานผ่าน **Supabase Dashboard → Table Editor → user_access** เท่านั้น แอปไม่มี `/admin/users` ไม่มีเมนู/ฟอร์มจัดการสิทธิ์ และไม่มี Service Role API
+- ไม่มี public signup, Invite User, SMTP หรืออีเมลกู้รหัสผ่าน การกู้รหัสผ่านยังเป็นขั้นตอนที่ผู้ดูแลช่วยดำเนินการด้วยตนเอง
+- งานนี้ใช้ post-Go-Live branch `feature/mms-027` และ Pull Request โดยไม่ merge/deploy อัตโนมัติ
+
+> คำเตือนการปฏิบัติงาน: **ควรมีผู้ใช้ role=admin อย่างน้อย 1 คนเสมอ**
+
+### การเปิดใช้แบบสองขั้น
+
+**Stage A — ใช้ได้ก่อน:** ใช้ migration `006_mms_027_access_bootstrap.sql` เพื่อสร้าง `user_access`, sync ผู้ใช้ Auth, backfill บัญชีเดิม, helper functions และ RLS ที่ให้อ่านสิทธิ์ของตนเองเท่านั้น Migration นี้จงใจยังไม่เปลี่ยน policy ของตารางงานบำรุงรักษาเดิม
+
+หลังใช้ Stage A ให้เปิด **Supabase Dashboard → Table Editor → user_access** ค้นหาบัญชีผู้ดูแลที่เจ้าของผลิตภัณฑ์เลือก แล้วแก้เป็น:
+
+```text
+role = admin
+section = NULL
+```
+
+ตรวจสอบใน SQL Editor โดยไม่แสดงรหัสผ่าน:
+
+```sql
+SELECT email, role, section
+FROM public.user_access
+ORDER BY email;
+
+SELECT count(*)
+FROM public.user_access
+WHERE role = 'admin';
+```
+
+จำนวน admin ต้องไม่น้อยกว่า 1 จากนั้นตรวจค่าจริงของส่วนงานก่อน Stage B:
+
+```sql
+SELECT DISTINCT location
+FROM public.machines
+ORDER BY location;
+```
+
+หากพบ `NULL`, ค่าว่าง หรือค่าอื่นนอก `REL`, `GP`, `FA`, `CAL` ให้หยุดและแจ้งเจ้าของผลิตภัณฑ์ ห้ามแก้หรือเดาค่าอัตโนมัติ
+
+**Stage B — ยืนยัน bootstrap แล้ว:** เจ้าของผลิตภัณฑ์ยืนยัน admin 1 บัญชีและตรวจพบเครื่อง `REL` 17 เครื่อง, `CAL` 1 เครื่อง โดยไม่มีค่าผิดปกติ Migration `007_mms_027_business_rls_cutover.sql` จึงพร้อมสำหรับการตรวจทานและเปิดใช้ด้วยขั้นตอนใน `docs/mms-027-stage-b.md` ห้าม merge/deploy อัตโนมัติ
+
+### การจัดการบัญชีและสิทธิ์ด้วยตนเอง
+
+1. สร้างบัญชี: **Authentication → Users → Add user → Create new user** กรอกอีเมลและรหัสผ่านชั่วคราว แล้วสร้าง/ยืนยันบัญชี
+2. Trigger จะสร้าง `user_access` ที่มีอีเมลตรงกับบัญชีและมี `role = NULL`, `section = NULL`
+3. ให้สิทธิ์ admin: **Table Editor → user_access → ค้นหาอีเมล → Edit row** ตั้ง `role = admin`, `section = NULL`
+4. ให้สิทธิ์ user: ตั้ง `role = user` และเลือก `section` เพียงหนึ่งค่าจาก `REL`, `GP`, `FA`, `CAL`
+5. ระงับสิทธิ์แอปโดยไม่ลบบัญชี: ตั้ง `role = NULL`, `section = NULL`
+6. เมื่อต้องลบบัญชี ให้ลบที่ **Authentication → Users**; `ON DELETE CASCADE` จะลบ `user_access`
 
 ### สร้างผู้ใช้ใหม่
 

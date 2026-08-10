@@ -8,6 +8,7 @@ import {
   type FormEvent,
 } from "react";
 import { supabase } from "@/lib/supabase";
+import { canWorkOnLocation, useAccess } from "@/components/AccessContext";
 import {
   OPERATING_IMPACT_OPTIONS,
   type OperatingImpact,
@@ -17,6 +18,7 @@ type MachineOption = {
   id: string;
   machine_code: string;
   machine_name: string;
+  location: string | null;
 };
 
 export type BreakdownFormValues = {
@@ -77,6 +79,7 @@ export default function BreakdownForm({
   onCancel,
   onSubmit,
 }: BreakdownFormProps) {
+  const access = useAccess();
   const [machineOptions, setMachineOptions] = useState<MachineOption[]>([]);
   const [machinesLoading, setMachinesLoading] = useState(true);
   const [machinesError, setMachinesError] = useState<string | null>(null);
@@ -106,7 +109,7 @@ export default function BreakdownForm({
     async function loadMachines() {
       const { data, error } = await supabase
         .from("machines")
-        .select("id, machine_code, machine_name")
+        .select("id, machine_code, machine_name, location")
         .eq("status", "active")
         .order("machine_code", { ascending: true });
 
@@ -118,7 +121,9 @@ export default function BreakdownForm({
         return;
       }
 
-      const options = (data ?? []) as MachineOption[];
+      const options = ((data ?? []) as MachineOption[]).filter((machine) =>
+        canWorkOnLocation(access, machine.location)
+      );
       setMachineOptions(options);
       setMachinesLoading(false);
 
@@ -135,7 +140,7 @@ export default function BreakdownForm({
     return () => {
       cancelled = true;
     };
-  }, [initialMachineId]);
+  }, [access, initialMachineId]);
 
   useEffect(() => {
     if (selectedMachine) {

@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, type FormEvent } from "react";
 import { supabase } from "@/lib/supabase";
 import { computeDueDisplay, formatDateThai } from "@/lib/pmDueDate";
+import { canWorkOnLocation, useAccess } from "@/components/AccessContext";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -16,7 +17,7 @@ const UUID_REGEX =
 // free to change independently.
 const RECENT_CLOSED_DAYS = 7;
 
-type MachineRelation = { id: string; machine_code: string; machine_name: string };
+type MachineRelation = { id: string; machine_code: string; machine_name: string; location: string | null };
 
 type PartSummary = {
   id: string;
@@ -174,6 +175,7 @@ function LoadingSkeleton() {
 }
 
 function PartReplacePageInner() {
+  const access = useAccess();
   const searchParams = useSearchParams();
 
   const [state, setState] = useState<LoadState>({ status: "loading" });
@@ -243,7 +245,7 @@ function PartReplacePageInner() {
       const linksRes = await supabase
         .from("machine_parts")
         .select(
-          "id, machine_id, lifespan_override_days, last_replaced_at, next_due_date, machines(id, machine_code, machine_name)"
+          "id, machine_id, lifespan_override_days, last_replaced_at, next_due_date, machines(id, machine_code, machine_name, location)"
         )
         .eq("part_id", partIdParam);
 
@@ -254,10 +256,14 @@ function PartReplacePageInner() {
         return;
       }
 
-      const links = ((linksRes.data ?? []) as RawLinkRow[]).map((row) => ({
-        ...row,
-        machines: normalizeMachineRelation(row.machines),
-      }));
+      const links = ((linksRes.data ?? []) as RawLinkRow[])
+        .map((row) => ({
+          ...row,
+          machines: normalizeMachineRelation(row.machines),
+        }))
+        .filter((link) =>
+          canWorkOnLocation(access, link.machines?.location ?? null)
+        );
 
       let targetLink: LinkRow | undefined;
 
@@ -299,7 +305,7 @@ function PartReplacePageInner() {
     return () => {
       cancelled = true;
     };
-  }, [searchParams]);
+  }, [access, searchParams]);
 
   async function handlePickMachine(link: LinkRow) {
     if (state.status !== "picking-machine") return;

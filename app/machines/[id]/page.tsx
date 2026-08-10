@@ -15,6 +15,7 @@ import type { MachineRecord } from "@/components/machine/MachineForm";
 import BreakdownHistoryTab from "@/components/machine/BreakdownHistoryTab";
 import PmHistoryTab from "@/components/machine/PmHistoryTab";
 import PartsTab from "@/components/machine/PartsTab";
+import { canWorkOnLocation, useAccess } from "@/components/AccessContext";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -62,6 +63,7 @@ function InfoRow({ label, value }: { label: string; value: ReactNode }) {
 }
 
 export default function MachineProfilePage() {
+  const access = useAccess();
   const params = useParams<{ id: string }>();
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [activeTab, setActiveTab] = useState<TabKey>("breakdowns");
@@ -308,20 +310,24 @@ export default function MachineProfilePage() {
             </div>
 
             <div className="mt-4 flex flex-wrap gap-3">
-              <Link
-                href={`/breakdowns/new?machine=${state.machine.id}`}
-                className="flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700"
-              >
-                <AlertTriangle size={16} aria-hidden="true" />
-                <span>+ แจ้งเสีย</span>
-              </Link>
-              <Link
-                href={`/machines/${state.machine.id}/edit`}
-                className="flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-accent px-4 text-sm font-medium text-white hover:bg-accent/90"
-              >
-                <Pencil size={16} aria-hidden="true" />
-                <span>แก้ไข</span>
-              </Link>
+              {canWorkOnLocation(access, state.machine.location) && (
+                <Link
+                  href={`/breakdowns/new?machine=${state.machine.id}`}
+                  className="flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700"
+                >
+                  <AlertTriangle size={16} aria-hidden="true" />
+                  <span>+ แจ้งเสีย</span>
+                </Link>
+              )}
+              {access.role === "admin" && (
+                <Link
+                  href={`/machines/${state.machine.id}/edit`}
+                  className="flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-accent px-4 text-sm font-medium text-white hover:bg-accent/90"
+                >
+                  <Pencil size={16} aria-hidden="true" />
+                  <span>แก้ไข</span>
+                </Link>
+              )}
               <Link
                 href={`/machines/${state.machine.id}/report`}
                 className="flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-primary/20 px-4 text-sm font-medium text-primary hover:bg-primary/5"
@@ -361,10 +367,18 @@ export default function MachineProfilePage() {
                 <BreakdownHistoryTab machineId={state.machine.id} />
               )}
               {activeTab === "pm" && (
-                <PmHistoryTab machineId={state.machine.id} />
+                <PmHistoryTab
+                  machineId={state.machine.id}
+                  canWork={canWorkOnLocation(access, state.machine.location)}
+                  isAdmin={access.role === "admin"}
+                />
               )}
               {activeTab === "parts" && (
-                <PartsTab machineId={state.machine.id} />
+                <PartsTab
+                  machineId={state.machine.id}
+                  isAdmin={access.role === "admin"}
+                  canWork={canWorkOnLocation(access, state.machine.location)}
+                />
               )}
             </div>
           </div>
