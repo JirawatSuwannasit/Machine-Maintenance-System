@@ -13,6 +13,7 @@ import {
 } from "@/lib/machineStatus";
 import ScheduleStrip from "@/components/home/ScheduleStrip";
 import MultiSelectFilter from "@/components/MultiSelectFilter";
+import { useAccess } from "@/components/AccessContext";
 
 const REFRESH_INTERVAL_MS = 60000;
 
@@ -238,6 +239,7 @@ function LoadingSkeleton() {
 }
 
 export default function Home() {
+  const access = useAccess();
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [machines, setMachines] = useState<MachineRow[]>([]);
@@ -486,24 +488,28 @@ export default function Home() {
                 className="sm:min-w-44"
               />
             </div>
-            <Link
-              href="/machines/new"
-              className="flex min-h-[44px] items-center justify-center whitespace-nowrap rounded-md bg-accent px-4 text-sm font-medium text-white hover:bg-accent/90"
-            >
-              + เพิ่มเครื่องจักร
-            </Link>
+            {access.role === "admin" && (
+              <Link
+                href="/machines/new"
+                className="flex min-h-[44px] items-center justify-center whitespace-nowrap rounded-md bg-accent px-4 text-sm font-medium text-white hover:bg-accent/90"
+              >
+                + เพิ่มเครื่องจักร
+              </Link>
+            )}
           </div>
 
           {/* Content area */}
           {machines.length === 0 ? (
             <div className="mt-10 flex flex-col items-center gap-4 text-center">
               <p className="text-primary/70">ยังไม่มีเครื่องจักรในระบบ</p>
-              <Link
-                href="/machines/new"
-                className="flex min-h-[44px] items-center justify-center rounded-md bg-accent px-6 text-sm font-medium text-white hover:bg-accent/90"
-              >
-                + เพิ่มเครื่องจักร
-              </Link>
+              {access.role === "admin" && (
+                <Link
+                  href="/machines/new"
+                  className="flex min-h-[44px] items-center justify-center rounded-md bg-accent px-6 text-sm font-medium text-white hover:bg-accent/90"
+                >
+                  + เพิ่มเครื่องจักร
+                </Link>
+              )}
             </div>
           ) : filteredMachines.length === 0 ? (
             <p className="mt-10 text-center text-primary/70">

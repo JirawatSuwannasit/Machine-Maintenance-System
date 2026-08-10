@@ -15,11 +15,12 @@ import {
   OPERATING_IMPACT_OPTIONS,
   type OperatingImpact,
 } from "@/lib/operatingImpact";
+import { canWorkOnLocation, useAccess } from "@/components/AccessContext";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type MachineRelation = { machine_code: string; machine_name: string };
+type MachineRelation = { machine_code: string; machine_name: string; location: string | null };
 
 type BreakdownDetail = {
   id: string;
@@ -59,7 +60,7 @@ function normalizeBreakdown(raw: RawBreakdownDetail): BreakdownDetail {
 }
 
 const BREAKDOWN_SELECT =
-  "id, machine_id, reported_at, symptom, cause, action_taken, downtime_minutes, repair_cost, technician, status, operating_impact, closed_at, machines(machine_code, machine_name)";
+  "id, machine_id, reported_at, symptom, cause, action_taken, downtime_minutes, repair_cost, technician, status, operating_impact, closed_at, machines(machine_code, machine_name, location)";
 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   open: {
@@ -406,6 +407,7 @@ async function fetchPartsCost(breakdownId: string): Promise<number> {
 }
 
 export default function BreakdownDetailPage() {
+  const access = useAccess();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [state, setState] = useState<LoadState>({ status: "loading" });
@@ -1094,7 +1096,7 @@ export default function BreakdownDetailPage() {
           </div>
 
           {/* View A: open -> accept the job */}
-          {state.breakdown.status === "open" && (
+          {state.breakdown.status === "open" && canWorkOnLocation(access, state.breakdown.machines?.location ?? null) && (
             <div className="mt-4 space-y-4">
               {!acceptingJob && (
                 <div className="flex gap-3">
@@ -1185,7 +1187,7 @@ export default function BreakdownDetailPage() {
           )}
 
           {/* View B: in_progress -> close-out form */}
-          {state.breakdown.status === "in_progress" && (
+          {state.breakdown.status === "in_progress" && canWorkOnLocation(access, state.breakdown.machines?.location ?? null) && (
             <form
               onSubmit={handleCloseSubmit}
               className="mt-4 space-y-4 rounded-lg border border-primary/10 bg-white p-4"
@@ -1341,7 +1343,7 @@ export default function BreakdownDetailPage() {
           {/* View C: closed -> read-only summary */}
           {state.breakdown.status === "closed" && (
             <div className="mt-4 space-y-4">
-              <button
+              {canWorkOnLocation(access, state.breakdown.machines?.location ?? null) && <button
                 type="button"
                 onClick={handleReopenClick}
                 disabled={reopening}
@@ -1349,7 +1351,7 @@ export default function BreakdownDetailPage() {
               >
                 <Pencil size={16} aria-hidden="true" />
                 <span>{reopening ? "กำลังเปิดใบงาน..." : "แก้ไขใบงาน"}</span>
-              </button>
+              </button>}
 
               <div className="rounded-lg border border-primary/10 bg-white p-4">
                 <dl className="space-y-2 text-sm">

@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Pencil } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { useAccess } from "@/components/AccessContext";
 import { computeDueDisplay, formatDateThai } from "@/lib/pmDueDate";
 
 const UUID_REGEX =
@@ -147,6 +148,7 @@ type LoadState =
     };
 
 export default function PartDetailPage() {
+  const access = useAccess();
   const params = useParams<{ id: string }>();
   const [state, setState] = useState<LoadState>({ status: "loading" });
 
@@ -282,13 +284,13 @@ export default function PartDetailPage() {
                   {state.part.part_name}
                 </p>
               </div>
-              <Link
+              {access.role === "admin" && <Link
                 href={`/parts/${state.part.id}/edit`}
                 className="flex min-h-[44px] shrink-0 items-center justify-center gap-2 rounded-md bg-accent px-4 text-sm font-medium text-white hover:bg-accent/90"
               >
                 <Pencil size={16} aria-hidden="true" />
                 <span>แก้ไข</span>
-              </Link>
+              </Link>}
             </div>
 
             <dl className="mt-4 space-y-1.5 text-sm">

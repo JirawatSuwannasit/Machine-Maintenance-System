@@ -11,6 +11,8 @@ import ChecklistResultView, {
 
 type PmHistoryTabProps = {
   machineId: string;
+  canWork: boolean;
+  isAdmin: boolean;
 };
 
 type PlanRelation = { pm_name: string };
@@ -141,7 +143,7 @@ function ErrorBox({ message }: { message: string }) {
   );
 }
 
-export default function PmHistoryTab({ machineId }: PmHistoryTabProps) {
+export default function PmHistoryTab({ machineId, canWork, isAdmin }: PmHistoryTabProps) {
   const [historyState, setHistoryState] = useState<HistoryState>({
     status: "loading",
   });
@@ -189,7 +191,7 @@ export default function PmHistoryTab({ machineId }: PmHistoryTabProps) {
   return (
     <div>
       {/* "ทำ PM เครื่องนี้" entry point */}
-      <div className="mb-4">
+      {canWork && <div className="mb-4">
         {activePlansState.status === "loading" ? (
           <div className="h-11 w-40 animate-pulse rounded-md bg-primary/10" />
         ) : activePlansState.status === "error" ? (
@@ -197,12 +199,11 @@ export default function PmHistoryTab({ machineId }: PmHistoryTabProps) {
         ) : activePlansState.plans.length === 0 ? (
           <div className="rounded-md border border-primary/10 bg-surface p-3 text-sm text-primary/70">
             เครื่องนี้ยังไม่มีแผน PM ·{" "}
-            <Link
-              href="/pm/plans"
-              className="font-medium text-accent hover:underline"
-            >
-              ไปหน้าแผน PM
-            </Link>
+            {isAdmin ? (
+              <Link href="/pm/plans" className="font-medium text-accent hover:underline">
+                ไปหน้าแผน PM
+              </Link>
+            ) : "ติดต่อผู้ดูแลระบบ"}
           </div>
         ) : activePlansState.plans.length === 1 ? (
           <Link
@@ -243,7 +244,7 @@ export default function PmHistoryTab({ machineId }: PmHistoryTabProps) {
             )}
           </div>
         )}
-      </div>
+      </div>}
 
       {/* History list */}
       {historyState.status === "loading" ? (
