@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { canWorkOnLocation, useAccess } from "@/components/AccessContext";
 import { DUE_SOON_DAYS } from "@/lib/machineStatus";
 import { formatDateThai, computeDueDisplay, toLocalDayStart } from "@/lib/pmDueDate";
 import ChecklistResultView, {
   type ChecklistResultItem,
 } from "@/components/pm/ChecklistResultView";
 
-type MachineRelation = { machine_code: string; machine_name: string };
+type MachineRelation = { machine_code: string; machine_name: string; location: string | null };
 type PlanRelation = { pm_name: string };
 
 // Without generated Database types, postgrest-js infers every embedded
@@ -113,7 +114,7 @@ async function fetchDueSoonPlans(): Promise<DueSoonState> {
 
   const { data, error } = await supabase
     .from("pm_plans")
-    .select("id, pm_name, next_due_date, machines(machine_code, machine_name)")
+    .select("id, pm_name, next_due_date, machines(machine_code, machine_name, location)")
     .eq("is_active", true)
     .not("next_due_date", "is", null)
     .lte("next_due_date", cutoff)
@@ -161,7 +162,7 @@ type RecentRecordsState =
   | { status: "loaded"; records: PmRecordRow[] };
 
 const PM_RECORD_SELECT =
-  "id, done_date, done_by, pm_cost, notes, checklist_result, pm_plans(pm_name), machines(machine_code, machine_name)";
+  "id, done_date, done_by, pm_cost, notes, checklist_result, pm_plans(pm_name), machines(machine_code, machine_name, location)";
 
 async function fetchRecentRecords(): Promise<RecentRecordsState> {
   const { data, error } = await supabase
@@ -206,6 +207,7 @@ function ErrorBox({ message }: { message: string }) {
 }
 
 export default function PmHomePage() {
+  const access = useAccess();
   const [dueSoonState, setDueSoonState] = useState<DueSoonState>({
     status: "loading",
   });
@@ -261,12 +263,12 @@ export default function PmHomePage() {
     <div className="p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">งาน PM</h1>
-        <Link
+        {access.role === "admin" && <Link
           href="/pm/plans"
           className="flex min-h-[44px] items-center justify-center whitespace-nowrap rounded-md border border-primary/20 px-4 text-sm font-medium text-primary hover:bg-primary/5"
         >
           จัดการแผน PM
-        </Link>
+        </Link>}
       </div>
 
       {/* Section A: due soon */}
@@ -324,12 +326,12 @@ export default function PmHomePage() {
                         </div>
                       </td>
                       <td className="py-3 pr-4">
-                        <Link
+                        {canWorkOnLocation(access, plan.machines?.location ?? null) && <Link
                           href={`/pm/record?plan=${plan.id}`}
                           className="flex min-h-[44px] items-center justify-center whitespace-nowrap rounded-md bg-accent px-4 text-sm font-medium text-white hover:bg-accent/90"
                         >
                           ทำ PM
-                        </Link>
+                        </Link>}
                       </td>
                     </tr>
                   ))}
@@ -362,12 +364,12 @@ export default function PmHomePage() {
                   <p className="mt-1 text-xs text-primary/60">
                     กำหนด: {formatDateThai(plan.next_due_date)}
                   </p>
-                  <Link
+                  {canWorkOnLocation(access, plan.machines?.location ?? null) && <Link
                     href={`/pm/record?plan=${plan.id}`}
                     className="mt-3 flex min-h-[44px] items-center justify-center rounded-md bg-accent px-4 text-sm font-medium text-white hover:bg-accent/90"
                   >
                     ทำ PM
-                  </Link>
+                  </Link>}
                 </div>
               ))}
             </div>
