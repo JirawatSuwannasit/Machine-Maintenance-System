@@ -230,11 +230,9 @@ function PmRecordPageInner() {
       note: entry.note.trim(),
     }));
 
-    // last_done_date and next_due_date on pm_plans are owned entirely by
-    // trg_pm_records_after_insert (supabase/migrations/001_init.sql): it
-    // fires AFTER INSERT ON pm_records and rolls the plan's schedule
-    // forward. This insert must never touch pm_plans directly -- the
-    // database does that automatically.
+    // last_done_date and next_due_date are database-owned. The PM-history
+    // trigger recomputes them from all records after this insert, so this
+    // page must never write derived plan dates directly.
     const { error } = await supabase.from("pm_records").insert({
       pm_plan_id: state.plan.id,
       machine_id: state.plan.machine_id,
@@ -252,7 +250,7 @@ function PmRecordPageInner() {
     }
 
     // Re-query the plan from the database (never compute the date in JS) --
-    // this is the acceptance test that trg_pm_records_after_insert actually
+    // this confirms that the PM-history recomputation trigger actually
     // fired. If next_due_date still comes back NULL, that means the trigger
     // did not run and an admin needs to know, not a silently wrong date.
     const { data: refreshedPlan } = await supabase

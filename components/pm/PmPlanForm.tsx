@@ -12,7 +12,6 @@ export type PmPlanRecord = {
   frequency_days: number;
   start_date: string | null;
   checklist: string[];
-  last_done_date: string | null;
 };
 
 export type PmPlanMachineOption = {
@@ -40,19 +39,6 @@ const FREQUENCY_PRESETS: Array<{ days: number; hint: string }> = [
 
 const inputClassName =
   "mt-1 block w-full min-h-[44px] rounded-md border border-primary/20 px-3 py-2 text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
-
-// Adds `days` calendar days to a "YYYY-MM-DD" string and returns a
-// "YYYY-MM-DD" string, mirroring the plain calendar-day arithmetic
-// trg_pm_records_after_insert performs in SQL
-// ((done_date + (frequency_days || ' days')::interval)::date) --
-// day-granularity only, no time-of-day/timezone component involved.
-function addDaysToIsoDate(isoDate: string, days: number): string {
-  const [year, month, day] = isoDate.split("-").map(Number);
-  const date = new Date(year, month - 1, day);
-  date.setDate(date.getDate() + days);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
 
 // New PM work should only be scheduled on machines currently in service, so
 // the dropdown only offers status = 'active' machines. If an existing plan's
@@ -146,14 +132,6 @@ export default function PmPlanForm({
     } else {
       setFrequencyDaysError(null);
     }
-    const startDateRequired = !isEditMode || !plan?.last_done_date;
-    if (startDateRequired && startDate === "") {
-      setStartDateError("กรุณาเลือกวันที่เริ่มนับรอบ PM");
-      hasError = true;
-    } else {
-      setStartDateError(null);
-    }
-
     if (hasError) return;
 
     setSubmitting(true);

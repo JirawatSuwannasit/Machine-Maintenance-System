@@ -501,13 +501,6 @@ export default function PmPlansPage() {
                       <p className="mt-1 text-xs text-primary/60">
                         {formatFrequency(plan.frequency_days)}
                       </p>
-                      <p className="mt-1 text-xs text-primary/60">
-                        เริ่มนับรอบ:{" "}
-                        {plan.start_date
-                          ? formatDateThai(plan.start_date)
-                          : "-"}
-                      </p>
-
                       <p className="mt-3 text-xs text-primary/60">
                         ทำล่าสุด: {formatLastDone(plan.last_done_date)}
                       </p>
