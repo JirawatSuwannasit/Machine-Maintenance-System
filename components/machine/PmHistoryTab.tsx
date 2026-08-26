@@ -297,6 +297,14 @@ export default function PmHistoryTab({ machineId, canWork, isAdmin }: PmHistoryT
                 </button>
                 {isExpanded && (
                   <div className="border-t border-primary/10 p-4">
+                    {isAdmin && (
+                      <Link
+                        href={`/pm/records/${entry.id}/edit`}
+                        className="mb-4 flex min-h-[44px] w-full items-center justify-center rounded-md border border-primary/20 px-4 text-sm font-medium text-primary hover:bg-primary/5 sm:ml-auto sm:w-fit"
+                      >
+                        แก้ไข
+                      </Link>
+                    )}
                     <ChecklistResultView items={entry.checklist_result} />
                     {entry.notes && (
                       <div className="mt-3">
