@@ -3,12 +3,14 @@
 import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { formatDateThai } from "@/lib/pmDueDate";
 
 export type PmPlanRecord = {
   id: string;
   machine_id: string;
   pm_name: string;
   frequency_days: number;
+  start_date: string | null;
   checklist: string[];
   last_done_date: string | null;
 };
@@ -82,6 +84,7 @@ export default function PmPlanForm({
   const [frequencyDays, setFrequencyDays] = useState(
     plan ? String(plan.frequency_days) : ""
   );
+  const [startDate, setStartDate] = useState(plan?.start_date ?? "");
   const [checklist, setChecklist] = useState<string[]>(plan?.checklist ?? []);
   const [checklistInput, setChecklistInput] = useState("");
 
@@ -90,6 +93,7 @@ export default function PmPlanForm({
   const [frequencyDaysError, setFrequencyDaysError] = useState<string | null>(
     null
   );
+  const [startDateError, setStartDateError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -142,6 +146,13 @@ export default function PmPlanForm({
     } else {
       setFrequencyDaysError(null);
     }
+    const startDateRequired = !isEditMode || !plan?.last_done_date;
+    if (startDateRequired && startDate === "") {
+      setStartDateError("กรุณาเลือกวันที่เริ่มนับรอบ PM");
+      hasError = true;
+    } else {
+      setStartDateError(null);
+    }
 
     if (hasError) return;
 
@@ -150,34 +161,14 @@ export default function PmPlanForm({
 
     const truncatedFrequency = Math.trunc(parsedFrequency);
 
-    // last_done_date is owned by trg_pm_records_after_insert
-    // (supabase/migrations/001_init.sql): it stamps it only when a
-    // pm_record is inserted. This form must never write to it.
-    //
-    // next_due_date is normally owned by that same trigger, but the trigger
-    // only fires on pm_records insert -- it never reacts to a plan's
-    // frequency_days being edited (MMS-022 bug fix #2). So when the user
-    // changes frequency_days on an existing plan, this is a deliberate,
-    // narrow exception: recompute next_due_date here from last_done_date so
-    // the due date follows the new frequency immediately, instead of
-    // staying stuck on the old one until the next PM is performed. If the
-    // plan has never been done (last_done_date is null), there is nothing
-    // to recompute from -- leave next_due_date untouched (still null).
-    const frequencyChanged =
-      isEditMode && plan !== undefined && truncatedFrequency !== plan.frequency_days;
-    const recomputedNextDueDate =
-      frequencyChanged && plan?.last_done_date
-        ? addDaysToIsoDate(plan.last_done_date, truncatedFrequency)
-        : undefined;
-
+    // The database trigger owns last_done_date and next_due_date. This form
+    // writes only the schedule inputs and never creates a competing due date.
     const payload = {
       machine_id: machineId,
       pm_name: trimmedPmName,
       frequency_days: truncatedFrequency,
+      start_date: startDate || null,
       checklist,
-      ...(recomputedNextDueDate !== undefined && {
-        next_due_date: recomputedNextDueDate,
-      }),
     };
 
     const { error } =
@@ -269,6 +260,41 @@ export default function PmPlanForm({
         {frequencyDaysError && (
           <p className="mt-1 text-sm text-red-700">{frequencyDaysError}</p>
         )}
+      </div>
+
+      <div>
+        <label htmlFor="pm_start_date" className="block text-sm font-medium">
+          วันที่เริ่มนับรอบ PM{(!isEditMode || !plan?.last_done_date) && "*"}
+        </label>
+        <input
+          id="pm_start_date"
+          type="date"
+          value={startDate}
+          onChange={(event) => setStartDate(event.target.value)}
+          required={!isEditMode || !plan?.last_done_date}
+          className={inputClassName}
+        />
+        <p className="mt-1 text-xs text-primary/60">
+          ใช้เป็นวันที่เริ่มต้นสำหรับคำนวณกำหนด PM ครั้งแรก สามารถเลือกวันที่ย้อนหลังได้
+        </p>
+        {startDateError && (
+          <p className="mt-1 text-sm text-red-700">{startDateError}</p>
+        )}
+        {Number.isFinite(Number(frequencyDays)) &&
+          Number(frequencyDays) > 0 &&
+          (plan?.last_done_date || startDate) && (
+            <p className="mt-2 text-sm font-medium text-primary/70">
+              {plan?.last_done_date
+                ? "กำหนดครั้งถัดไป"
+                : "กำหนด PM ครั้งแรก"}
+              : {formatDateThai(
+                  addDaysToIsoDate(
+                    plan?.last_done_date ?? startDate,
+                    Math.trunc(Number(frequencyDays))
+                  )
+                )}
+            </p>
+          )}
       </div>
 
       <div>
