@@ -16,6 +16,7 @@ type PmPlanDetail = {
   machine_id: string;
   pm_name: string;
   frequency_days: number;
+  start_date: string | null;
   checklist: string[];
   last_done_date: string | null;
   next_due_date: string | null;
@@ -54,7 +55,7 @@ function normalizePlan(raw: RawPmPlanDetail): PmPlanDetail {
 }
 
 const PM_PLAN_SELECT =
-  "id, machine_id, pm_name, frequency_days, checklist, last_done_date, next_due_date, machines(machine_code, machine_name, location)";
+  "id, machine_id, pm_name, frequency_days, start_date, checklist, last_done_date, next_due_date, machines(machine_code, machine_name, location)";
 
 function formatDateThai(isoDate: string): string {
   const [year, month, day] = isoDate.split("-");
