@@ -3,12 +3,14 @@
 import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { formatDateThai } from "@/lib/pmDueDate";
 
 export type PmPlanRecord = {
   id: string;
   machine_id: string;
   pm_name: string;
   frequency_days: number;
+  start_date: string | null;
   checklist: string[];
 };
 
@@ -68,6 +70,7 @@ export default function PmPlanForm({
   const [frequencyDays, setFrequencyDays] = useState(
     plan ? String(plan.frequency_days) : ""
   );
+  const [startDate, setStartDate] = useState(plan?.start_date ?? "");
   const [checklist, setChecklist] = useState<string[]>(plan?.checklist ?? []);
   const [checklistInput, setChecklistInput] = useState("");
 
@@ -76,6 +79,7 @@ export default function PmPlanForm({
   const [frequencyDaysError, setFrequencyDaysError] = useState<string | null>(
     null
   );
+  const [startDateError, setStartDateError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -141,6 +145,7 @@ export default function PmPlanForm({
       machine_id: machineId,
       pm_name: trimmedPmName,
       frequency_days: truncatedFrequency,
+      start_date: startDate || null,
       checklist,
     };
 
@@ -233,6 +238,41 @@ export default function PmPlanForm({
         {frequencyDaysError && (
           <p className="mt-1 text-sm text-red-700">{frequencyDaysError}</p>
         )}
+      </div>
+
+      <div>
+        <label htmlFor="pm_start_date" className="block text-sm font-medium">
+          วันที่เริ่มนับรอบ PM{(!isEditMode || !plan?.last_done_date) && "*"}
+        </label>
+        <input
+          id="pm_start_date"
+          type="date"
+          value={startDate}
+          onChange={(event) => setStartDate(event.target.value)}
+          required={!isEditMode || !plan?.last_done_date}
+          className={inputClassName}
+        />
+        <p className="mt-1 text-xs text-primary/60">
+          ใช้เป็นวันที่เริ่มต้นสำหรับคำนวณกำหนด PM ครั้งแรก สามารถเลือกวันที่ย้อนหลังได้
+        </p>
+        {startDateError && (
+          <p className="mt-1 text-sm text-red-700">{startDateError}</p>
+        )}
+        {Number.isFinite(Number(frequencyDays)) &&
+          Number(frequencyDays) > 0 &&
+          (plan?.last_done_date || startDate) && (
+            <p className="mt-2 text-sm font-medium text-primary/70">
+              {plan?.last_done_date
+                ? "กำหนดครั้งถัดไป"
+                : "กำหนด PM ครั้งแรก"}
+              : {formatDateThai(
+                  addDaysToIsoDate(
+                    plan?.last_done_date ?? startDate,
+                    Math.trunc(Number(frequencyDays))
+                  )
+                )}
+            </p>
+          )}
       </div>
 
       <div>
