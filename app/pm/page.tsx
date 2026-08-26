@@ -591,6 +591,14 @@ export default function PmHomePage() {
                 </p>
               </div>
             )}
+            {access.role === "admin" && (
+              <Link
+                href={`/pm/records/${selectedRecord.id}/edit`}
+                className="mt-5 flex min-h-[44px] w-full items-center justify-center rounded-md bg-accent px-4 text-sm font-medium text-white hover:bg-accent/90"
+              >
+                แก้ไข
+              </Link>
+            )}
           </div>
         </div>
       )}

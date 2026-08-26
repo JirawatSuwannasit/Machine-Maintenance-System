@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "check:auth": "node scripts/check-auth-surface.mjs",
+    "check:pm-schedule-ui": "node scripts/check-pm-schedule-ui.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
