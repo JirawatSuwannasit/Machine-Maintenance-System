@@ -21,7 +21,6 @@ type PmPlanRow = {
   machine_id: string;
   pm_name: string;
   frequency_days: number;
-  start_date: string | null;
   checklist: string[];
   last_done_date: string | null;
   next_due_date: string | null;
@@ -29,11 +28,6 @@ type PmPlanRow = {
   machines: MachineRelation | null;
 };
 
-// Without generated Database types, postgrest-js infers every embedded
-// relation as an array regardless of actual FK cardinality, even though a
-// to-one FK (pm_plans.machine_id -> machines.id) returns a plain object at
-// runtime. Handle both shapes so a broken/missing join never crashes the
-// page. checklist is jsonb and needs the same defensive treatment.
 type RawPmPlanRow = Omit<PmPlanRow, "machines" | "checklist"> & {
   machines: MachineRelation | MachineRelation[] | null;
   checklist: unknown;
@@ -53,18 +47,14 @@ function normalizeChecklist(value: unknown): string[] {
 }
 
 const PM_PLAN_SELECT =
-  "id, machine_id, pm_name, frequency_days, start_date, checklist, last_done_date, next_due_date, is_active, machines(machine_code, machine_name)";
+  "id, machine_id, pm_name, frequency_days, checklist, last_done_date, next_due_date, is_active, machines(machine_code, machine_name)";
 
-// Sort buckets: 0 = overdue, 1 = never done (next_due_date is null), 2 = upcoming.
 function dueBucket(nextDueDate: string | null, referenceDate: Date): number {
   const diffDays = computeDueDiffDays(nextDueDate, referenceDate);
   if (diffDays === null) return 1;
   return diffDays < 0 ? 0 : 2;
 }
 
-// Overdue plans first (soonest/most-overdue next_due_date first), then
-// never-done plans, then the rest (soonest upcoming first). Inactive plans
-// always sort after active ones, regardless of due date.
 function sortPlans(rows: PmPlanRow[]): PmPlanRow[] {
   const today = new Date();
   return [...rows].sort((a, b) => {
@@ -330,7 +320,6 @@ export default function PmPlansPage() {
         </div>
       ) : (
         <>
-          {/* Filters */}
           <div className="mt-4 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end">
             <MultiSelectFilter
               label="เครื่องจักร"
@@ -361,14 +350,12 @@ export default function PmPlansPage() {
             </div>
           )}
 
-          {/* Content */}
           {filteredPlans.length === 0 ? (
             <p className="mt-10 text-center text-primary/70">
               ไม่พบแผน PM ตามเงื่อนไขที่เลือก
             </p>
           ) : (
             <>
-              {/* Desktop table */}
               <div className="mt-6 hidden overflow-x-auto md:block">
                 <table className="w-full border-collapse text-sm">
                   <thead>
@@ -376,7 +363,6 @@ export default function PmPlansPage() {
                       <th className="py-2 pr-4 font-medium">เครื่องจักร</th>
                       <th className="py-2 pr-4 font-medium">ชื่องาน PM</th>
                       <th className="py-2 pr-4 font-medium">รอบ</th>
-                      <th className="py-2 pr-4 font-medium">เริ่มนับรอบ</th>
                       <th className="py-2 pr-4 font-medium">ทำล่าสุด</th>
                       <th className="py-2 pr-4 font-medium">
                         กำหนดครั้งถัดไป
@@ -412,11 +398,6 @@ export default function PmPlansPage() {
                           </td>
                           <td className="whitespace-nowrap py-3 pr-4 text-primary/70">
                             {formatFrequency(plan.frequency_days)}
-                          </td>
-                          <td className="whitespace-nowrap py-3 pr-4 text-primary/70">
-                            {plan.start_date
-                              ? formatDateThai(plan.start_date)
-                              : "-"}
                           </td>
                           <td className="whitespace-nowrap py-3 pr-4 text-primary/70">
                             {formatLastDone(plan.last_done_date)}
@@ -469,7 +450,6 @@ export default function PmPlansPage() {
                 </table>
               </div>
 
-              {/* Mobile cards */}
               <div className="mt-6 space-y-3 md:hidden">
                 {filteredPlans.map((plan) => {
                   const machineCode = plan.machines?.machine_code ?? "-";
@@ -552,7 +532,6 @@ export default function PmPlansPage() {
         </>
       )}
 
-      {/* Add/edit modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-lg">
