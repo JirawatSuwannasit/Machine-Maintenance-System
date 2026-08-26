@@ -21,6 +21,7 @@ type PmPlanRow = {
   machine_id: string;
   pm_name: string;
   frequency_days: number;
+  start_date: string | null;
   checklist: string[];
   last_done_date: string | null;
   next_due_date: string | null;
@@ -52,7 +53,7 @@ function normalizeChecklist(value: unknown): string[] {
 }
 
 const PM_PLAN_SELECT =
-  "id, machine_id, pm_name, frequency_days, checklist, last_done_date, next_due_date, is_active, machines(machine_code, machine_name)";
+  "id, machine_id, pm_name, frequency_days, start_date, checklist, last_done_date, next_due_date, is_active, machines(machine_code, machine_name)";
 
 // Sort buckets: 0 = overdue, 1 = never done (next_due_date is null), 2 = upcoming.
 function dueBucket(nextDueDate: string | null, referenceDate: Date): number {
@@ -375,6 +376,7 @@ export default function PmPlansPage() {
                       <th className="py-2 pr-4 font-medium">เครื่องจักร</th>
                       <th className="py-2 pr-4 font-medium">ชื่องาน PM</th>
                       <th className="py-2 pr-4 font-medium">รอบ</th>
+                      <th className="py-2 pr-4 font-medium">เริ่มนับรอบ</th>
                       <th className="py-2 pr-4 font-medium">ทำล่าสุด</th>
                       <th className="py-2 pr-4 font-medium">
                         กำหนดครั้งถัดไป
@@ -410,6 +412,11 @@ export default function PmPlansPage() {
                           </td>
                           <td className="whitespace-nowrap py-3 pr-4 text-primary/70">
                             {formatFrequency(plan.frequency_days)}
+                          </td>
+                          <td className="whitespace-nowrap py-3 pr-4 text-primary/70">
+                            {plan.start_date
+                              ? formatDateThai(plan.start_date)
+                              : "-"}
                           </td>
                           <td className="whitespace-nowrap py-3 pr-4 text-primary/70">
                             {formatLastDone(plan.last_done_date)}
@@ -493,6 +500,12 @@ export default function PmPlansPage() {
                       </p>
                       <p className="mt-1 text-xs text-primary/60">
                         {formatFrequency(plan.frequency_days)}
+                      </p>
+                      <p className="mt-1 text-xs text-primary/60">
+                        เริ่มนับรอบ:{" "}
+                        {plan.start_date
+                          ? formatDateThai(plan.start_date)
+                          : "-"}
                       </p>
 
                       <p className="mt-3 text-xs text-primary/60">
