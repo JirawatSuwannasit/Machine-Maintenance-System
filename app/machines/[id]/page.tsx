@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, Pencil, Printer } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -65,8 +65,11 @@ function InfoRow({ label, value }: { label: string; value: ReactNode }) {
 export default function MachineProfilePage() {
   const access = useAccess();
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const [state, setState] = useState<LoadState>({ status: "loading" });
-  const [activeTab, setActiveTab] = useState<TabKey>("breakdowns");
+  const [activeTab, setActiveTab] = useState<TabKey>(
+    searchParams.get("tab") === "pm" ? "pm" : "breakdowns"
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -161,6 +164,11 @@ export default function MachineProfilePage() {
 
   return (
     <div className="p-4">
+      {searchParams.get("updated") === "1" && (
+        <div className="mb-4 rounded-md bg-green-600 px-4 py-3 text-center text-sm text-white shadow-sm">
+          แก้ไขประวัติ PM แล้ว
+        </div>
+      )}
       {state.status === "loading" && (
         <div className="animate-pulse space-y-4">
           <div className="h-8 w-48 rounded-md bg-primary/10" />
