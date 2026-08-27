@@ -3,12 +3,17 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { DUE_SOON_DAYS } from "@/lib/machineStatus";
+import ScheduleRangeSelector from "@/components/schedule/ScheduleRangeSelector";
+import {
+  DEFAULT_SCHEDULE_RANGE,
+  getScheduleRangeLabel,
+  isDueWithinScheduleRange,
+  type ScheduleRange,
+} from "@/lib/scheduleRange";
 import {
   computeDueDisplay,
   formatDateThai,
   parseIsoDateAsLocalDay,
-  toLocalDayStart,
 } from "@/lib/pmDueDate";
 
 export type PmPlanScheduleInput = {
@@ -50,20 +55,18 @@ type ScheduleItem = {
 };
 
 // Merges pm_plans + machine_parts due dates into one sorted list, keeping
-// only items due within DUE_SOON_DAYS (overdue items included -- they sort
+// only items due within the selected range (overdue items included -- they sort
 // first since overdue dates are chronologically earliest). Machines that
 // are inactive/scrapped are excluded, matching the gray status board tiles.
 function buildScheduleItems(
   pmPlans: PmPlanScheduleInput[],
   machineParts: MachinePartScheduleInput[],
-  machines: ScheduleMachineInput[]
+  machines: ScheduleMachineInput[],
+  range: ScheduleRange
 ): ScheduleItem[] {
   const machinesById = new Map(
     machines.map((machine) => [machine.id, machine])
   );
-  const cutoff = toLocalDayStart(new Date());
-  cutoff.setDate(cutoff.getDate() + DUE_SOON_DAYS);
-
   function schedulableMachine(machineId: string): ScheduleMachineInput | null {
     const machine = machinesById.get(machineId);
     if (!machine) return null;
@@ -78,7 +81,7 @@ function buildScheduleItems(
   for (const plan of pmPlans) {
     const machine = schedulableMachine(plan.machine_id);
     if (!machine) continue;
-    if (parseIsoDateAsLocalDay(plan.next_due_date) > cutoff) continue;
+    if (!isDueWithinScheduleRange(plan.next_due_date, range)) continue;
     items.push({
       key: `pm-${plan.id}`,
       kind: "pm",
@@ -93,7 +96,7 @@ function buildScheduleItems(
   for (const link of machineParts) {
     const machine = schedulableMachine(link.machine_id);
     if (!machine) continue;
-    if (parseIsoDateAsLocalDay(link.next_due_date) > cutoff) continue;
+    if (!isDueWithinScheduleRange(link.next_due_date, range)) continue;
     items.push({
       key: `part-${link.id}`,
       kind: "part",
@@ -138,6 +141,7 @@ export default function ScheduleStrip({
   // first-client-render markup identical; the effect below expands it on
   // desktop viewports right after mount.
   const [expanded, setExpanded] = useState(false);
+  const [range, setRange] = useState<ScheduleRange>(DEFAULT_SCHEDULE_RANGE);
 
   useEffect(() => {
     if (window.innerWidth >= 768) {
@@ -146,21 +150,23 @@ export default function ScheduleStrip({
   }, []);
 
   const items = useMemo(
-    () => buildScheduleItems(pmPlans, machineParts, machines),
-    [pmPlans, machineParts, machines]
+    () => buildScheduleItems(pmPlans, machineParts, machines, range),
+    [pmPlans, machineParts, machines, range]
   );
+  const rangeLabel = getScheduleRangeLabel(range);
 
   return (
     <section className="mt-4 rounded-lg border border-primary/10 bg-white shadow-sm">
-      <button
-        type="button"
-        onClick={() => setExpanded((prev) => !prev)}
-        className="flex min-h-[44px] w-full items-center justify-between gap-3 px-4 py-3 text-left"
-        aria-expanded={expanded}
-      >
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <button
+          type="button"
+          onClick={() => setExpanded((prev) => !prev)}
+          className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-3 text-left"
+          aria-expanded={expanded}
+        >
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="text-base font-bold text-primary">
-            กำหนดการ {DUE_SOON_DAYS} วันข้างหน้า
+            กำหนดการ {rangeLabel}ข้างหน้า
           </span>
           <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
             {items.length} งาน
@@ -173,13 +179,17 @@ export default function ScheduleStrip({
             expanded ? "rotate-180" : ""
           }`}
         />
-      </button>
+        </button>
+        <div onClick={(event) => event.stopPropagation()}>
+          <ScheduleRangeSelector value={range} onChange={setRange} />
+        </div>
+      </div>
 
       {expanded && (
         <div className="border-t border-primary/10 p-4">
           {items.length === 0 ? (
             <p className="py-4 text-center text-sm text-primary/60">
-              ไม่มีงานครบกำหนดใน {DUE_SOON_DAYS} วันนี้ 🎉
+              ไม่มีงานครบกำหนดในช่วง {rangeLabel}นี้ 🎉
             </p>
           ) : (
             <div className="space-y-3">

@@ -1,11 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { canWorkOnLocation, useAccess } from "@/components/AccessContext";
-import { DUE_SOON_DAYS } from "@/lib/machineStatus";
-import { formatDateThai, computeDueDisplay, toLocalDayStart } from "@/lib/pmDueDate";
+import { formatDateThai, computeDueDisplay } from "@/lib/pmDueDate";
+import ScheduleRangeSelector from "@/components/schedule/ScheduleRangeSelector";
+import {
+  DEFAULT_SCHEDULE_RANGE,
+  getScheduleCutoff,
+  getScheduleRangeLabel,
+  isDueWithinScheduleRange,
+  type ScheduleRange,
+} from "@/lib/scheduleRange";
 import ChecklistResultView, {
   type ChecklistResultItem,
 } from "@/components/pm/ChecklistResultView";
@@ -58,9 +65,7 @@ function formatMoneyThai(value: number | string): string {
   })} บาท`;
 }
 
-function computeCutoffIsoDate(days: number): string {
-  const d = toLocalDayStart(new Date());
-  d.setDate(d.getDate() + days);
+function formatIsoDate(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
@@ -110,7 +115,7 @@ type DueSoonState =
   | { status: "loaded"; plans: DueSoonPlan[] };
 
 async function fetchDueSoonPlans(): Promise<DueSoonState> {
-  const cutoff = computeCutoffIsoDate(DUE_SOON_DAYS);
+  const cutoff = formatIsoDate(getScheduleCutoff("6m"));
 
   const { data, error } = await supabase
     .from("pm_plans")
@@ -217,6 +222,7 @@ export default function PmHomePage() {
   const [selectedRecord, setSelectedRecord] = useState<PmRecordRow | null>(
     null
   );
+  const [range, setRange] = useState<ScheduleRange>(DEFAULT_SCHEDULE_RANGE);
 
   useEffect(() => {
     let cancelled = false;
@@ -259,6 +265,17 @@ export default function PmHomePage() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [selectedRecord]);
 
+  const visiblePlans = useMemo(
+    () =>
+      dueSoonState.status === "loaded"
+        ? dueSoonState.plans.filter((plan) =>
+            isDueWithinScheduleRange(plan.next_due_date, range)
+          )
+        : [],
+    [dueSoonState, range]
+  );
+  const rangeLabel = getScheduleRangeLabel(range);
+
   return (
     <div className="p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -273,18 +290,21 @@ export default function PmHomePage() {
 
       {/* Section A: due soon */}
       <section className="mt-6">
-        <h2 className="text-lg font-bold text-primary">
-          ถึงกำหนด
-          {dueSoonState.status === "loaded" && ` (${dueSoonState.plans.length})`}
-        </h2>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-lg font-bold text-primary">
+            ถึงกำหนดในช่วง {rangeLabel}
+            {dueSoonState.status === "loaded" && ` (${visiblePlans.length})`}
+          </h2>
+          <ScheduleRangeSelector value={range} onChange={setRange} />
+        </div>
 
         {dueSoonState.status === "loading" ? (
           <TableLoadingSkeleton />
         ) : dueSoonState.status === "error" ? (
           <ErrorBox message={dueSoonState.message} />
-        ) : dueSoonState.plans.length === 0 ? (
+        ) : visiblePlans.length === 0 ? (
           <p className="mt-6 py-4 text-center text-primary/70">
-            ไม่มีงาน PM ถึงกำหนดใน {DUE_SOON_DAYS} วันนี้ 🎉
+            ไม่มีงาน PM ถึงกำหนดในช่วง {rangeLabel}นี้ 🎉
           </p>
         ) : (
           <>
@@ -300,7 +320,7 @@ export default function PmHomePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {dueSoonState.plans.map((plan) => (
+                  {visiblePlans.map((plan) => (
                     <tr
                       key={plan.id}
                       className="border-b border-primary/5 hover:bg-surface"
@@ -341,7 +361,7 @@ export default function PmHomePage() {
 
             {/* Mobile cards */}
             <div className="mt-4 space-y-3 md:hidden">
-              {dueSoonState.plans.map((plan) => (
+              {visiblePlans.map((plan) => (
                 <div
                   key={plan.id}
                   className="rounded-lg border border-primary/10 bg-white p-4 shadow-sm"
