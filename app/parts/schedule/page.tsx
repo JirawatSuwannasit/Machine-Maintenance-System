@@ -5,13 +5,13 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { formatDateThai, computeDueDiffDays } from "@/lib/pmDueDate";
 import MultiSelectFilter from "@/components/MultiSelectFilter";
-
-// This page's own procurement/planning horizon -- deliberately LONGER than
-// lib/machineStatus.ts's DUE_SOON_DAYS (7), which drives the shop-floor
-// "act now" status light. This page groups rows out to 30 days so there is
-// enough lead time to actually order parts; the two constants are
-// independent and must not be conflated.
-const SCHEDULE_HORIZON_DAYS = 30;
+import ScheduleRangeSelector from "@/components/schedule/ScheduleRangeSelector";
+import {
+  DEFAULT_SCHEDULE_RANGE,
+  getScheduleRangeLabel,
+  isDueWithinScheduleRange,
+  type ScheduleRange,
+} from "@/lib/scheduleRange";
 
 type MachineRelation = { id: string; machine_code: string; machine_name: string };
 type PartRelation = {
@@ -60,20 +60,19 @@ function normalizePartRelation(
 const SCHEDULE_SELECT =
   "id, machine_id, part_id, next_due_date, machines(id, machine_code, machine_name), spare_parts(id, part_code, part_name, stock_qty, min_stock)";
 
-type Bucket = "overdue" | "within30" | "later";
+type Bucket = "overdue" | "upcoming";
 
 type RowWithDiff = ScheduleRow & { diffDays: number; bucket: Bucket };
 
 function bucketOf(diffDays: number): Bucket {
   if (diffDays < 0) return "overdue";
-  if (diffDays <= SCHEDULE_HORIZON_DAYS) return "within30";
-  return "later";
+  return "upcoming";
 }
 
 // Same three-way "เลยกำหนด/ครบกำหนดวันนี้/อีก" wording used elsewhere, but
 // deliberately NOT lib/pmDueDate.ts's computeDueDisplay() colour helper --
 // that helper's green/yellow split is tied to DUE_SOON_DAYS (7), while this
-// page's rows span the full SCHEDULE_HORIZON_DAYS (30).
+// page can span the full user-selected schedule range.
 function formatUrgencyLabel(diffDays: number): string {
   if (diffDays < 0) return `เลยกำหนด ${Math.abs(diffDays)} วัน`;
   if (diffDays === 0) return "ครบกำหนดวันนี้";
@@ -89,7 +88,6 @@ function getShortageInfo(
   row: RowWithDiff,
   demandByPart: Map<string, number>
 ): ShortageInfo | null {
-  if (row.bucket === "later") return null;
   const demand = demandByPart.get(row.part_id) ?? 0;
   const stockQty = row.spare_parts?.stock_qty ?? 0;
   if (demand <= stockQty) return null;
@@ -354,6 +352,7 @@ export default function PartsSchedulePage() {
   const [machineFilters, setMachineFilters] = useState<string[]>([]);
   const [partFilters, setPartFilters] = useState<string[]>([]);
   const [insufficientOnly, setInsufficientOnly] = useState(false);
+  const [range, setRange] = useState<ScheduleRange>(DEFAULT_SCHEDULE_RANGE);
 
   useEffect(() => {
     let cancelled = false;
@@ -375,14 +374,21 @@ export default function PartsSchedulePage() {
     [state]
   );
 
+  const rangeRows = useMemo(
+    () =>
+      rows
+        .filter((row) => isDueWithinScheduleRange(row.next_due_date, range))
+        .sort((a, b) => a.next_due_date.localeCompare(b.next_due_date)),
+    [rows, range]
+  );
+
   const demandByPart = useMemo(() => {
     const map = new Map<string, number>();
-    for (const row of rows) {
-      if (row.bucket === "later") continue;
+    for (const row of rangeRows) {
       map.set(row.part_id, (map.get(row.part_id) ?? 0) + 1);
     }
     return map;
-  }, [rows]);
+  }, [rangeRows]);
 
   const machineOptions = useMemo(() => {
     const map = new Map<string, MachineRelation>();
@@ -405,7 +411,7 @@ export default function PartsSchedulePage() {
   }, [rows]);
 
   const filteredRows = useMemo(() => {
-    return rows.filter((row) => {
+    return rangeRows.filter((row) => {
       if (machineFilters.length > 0 && !machineFilters.includes(row.machine_id))
         return false;
       if (partFilters.length > 0 && !partFilters.includes(row.part_id))
@@ -413,21 +419,25 @@ export default function PartsSchedulePage() {
       if (insufficientOnly && !getShortageInfo(row, demandByPart)) return false;
       return true;
     });
-  }, [rows, machineFilters, partFilters, insufficientOnly, demandByPart]);
+  }, [rangeRows, machineFilters, partFilters, insufficientOnly, demandByPart]);
 
   const overdueRows = filteredRows
     .filter((r) => r.bucket === "overdue")
     .sort((a, b) => a.diffDays - b.diffDays);
-  const within30Rows = filteredRows
-    .filter((r) => r.bucket === "within30")
+  const upcomingRows = filteredRows
+    .filter((r) => r.bucket === "upcoming")
     .sort((a, b) => a.diffDays - b.diffDays);
-  const laterRows = filteredRows
-    .filter((r) => r.bucket === "later")
-    .sort((a, b) => a.diffDays - b.diffDays);
+  const rangeLabel = getScheduleRangeLabel(range);
 
   return (
     <div className="p-4">
-      <h1 className="text-2xl font-bold">ตารางกำหนดเปลี่ยนอะไหล่</h1>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">ตารางกำหนดเปลี่ยนอะไหล่</h1>
+          <p className="mt-1 text-sm text-primary/60">กำหนดการในช่วง {rangeLabel}</p>
+        </div>
+        <ScheduleRangeSelector value={range} onChange={setRange} />
+      </div>
 
       {state.status === "loading" ? (
         <LoadingSkeleton />
@@ -490,14 +500,8 @@ export default function PartsSchedulePage() {
               />
               <ScheduleGroupSection
                 icon="🟡"
-                title={`ภายใน ${SCHEDULE_HORIZON_DAYS} วัน`}
-                rows={within30Rows}
-                demandByPart={demandByPart}
-              />
-              <ScheduleGroupSection
-                icon="🟢"
-                title={`เกิน ${SCHEDULE_HORIZON_DAYS} วัน`}
-                rows={laterRows}
+                title={`ภายใน ${rangeLabel}`}
+                rows={upcomingRows}
                 demandByPart={demandByPart}
               />
             </>
