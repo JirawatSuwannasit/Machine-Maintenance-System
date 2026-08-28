@@ -170,21 +170,27 @@ function formatMoneyThai(value: number | string): string {
   })} บาท`;
 }
 
-function computeDefaultDowntimeMinutes(reportedAtIso: string): number {
-  const reportedAt = new Date(reportedAtIso).getTime();
-  const diffMinutes = Math.floor((Date.now() - reportedAt) / 60000);
-  return diffMinutes > 0 ? diffMinutes : 0;
+function toDateTimeLocal(iso: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function fromDateTimeLocal(value: string): string {
+  return new Date(value).toISOString();
+}
+
+function computeDowntimePreview(reportedAtIso: string, closedAtIso: string): number | null {
+  const minutes = Math.floor(
+    (new Date(closedAtIso).getTime() - new Date(reportedAtIso).getTime()) / 60_000
+  );
+  return minutes >= 0 ? minutes : null;
 }
 
 function coerceNumber(value: number | string): number {
   const num = typeof value === "string" ? parseFloat(value) : value;
   return Number.isFinite(num) ? num : 0;
-}
-
-function todayIsoDate(): string {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
 type SparePartRelation = {
@@ -263,6 +269,7 @@ type RawExistingPartRow = {
   part_id: string;
   qty_used: number;
   unit_cost: number | string;
+  replaced_at: string;
   spare_parts: SparePartRelation | SparePartRelation[] | null;
 };
 
@@ -275,7 +282,7 @@ async function fetchExistingPartLines(
   const { data, error } = await supabase
     .from("part_replacements")
     .select(
-      "id, part_id, qty_used, unit_cost, spare_parts(part_code, part_name, unit_cost, stock_qty)"
+      "id, part_id, qty_used, unit_cost, replaced_at, spare_parts(part_code, part_name, unit_cost, stock_qty)"
     )
     .eq("breakdown_id", breakdownId)
     .order("created_at", { ascending: true });
@@ -290,6 +297,7 @@ async function fetchExistingPartLines(
     lines.push({
       key: `existing-${row.id}`,
       id: row.id,
+      replacedAt: row.replaced_at,
       partId: row.part_id,
       qtyUsed: row.qty_used,
       unitCost: coerceNumber(row.unit_cost),
@@ -430,12 +438,14 @@ export default function BreakdownDetailPage() {
 
   const [cause, setCause] = useState("");
   const [actionTaken, setActionTaken] = useState("");
-  const [downtimeMinutes, setDowntimeMinutes] = useState<number | "">(0);
+  const [downtimeMinutes, setDowntimeMinutes] = useState<number | "">("");
   const [repairCost, setRepairCost] = useState<number | "">(0);
   const [closeTechnician, setCloseTechnician] = useState("");
   const [operatingImpact, setOperatingImpact] = useState<OperatingImpact | "">(
     ""
   );
+  const [closedAtLocal, setClosedAtLocal] = useState("");
+  const [editingHistory, setEditingHistory] = useState(false);
 
   const [causeError, setCauseError] = useState<string | null>(null);
   const [actionTakenError, setActionTakenError] = useState<string | null>(
@@ -461,7 +471,6 @@ export default function BreakdownDetailPage() {
     null
   );
 
-  const [reopening, setReopening] = useState(false);
   const [reopenNotice, setReopenNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -515,9 +524,7 @@ export default function BreakdownDetailPage() {
       setReporterSnapshot(breakdown.technician);
       setCause(breakdown.cause ?? "");
       setActionTaken(breakdown.action_taken ?? "");
-      setDowntimeMinutes(
-        breakdown.downtime_minutes ?? computeDefaultDowntimeMinutes(breakdown.reported_at)
-      );
+      setDowntimeMinutes(breakdown.downtime_minutes ?? "");
       setRepairCost(
         breakdown.repair_cost
           ? typeof breakdown.repair_cost === "string"
@@ -527,6 +534,7 @@ export default function BreakdownDetailPage() {
       );
       setCloseTechnician(breakdown.technician ?? "");
       setOperatingImpact(breakdown.operating_impact);
+      setClosedAtLocal(toDateTimeLocal(breakdown.closed_at));
       setPartLines(existingParts.lines);
       setOriginalPartLines(existingParts.lines);
 
@@ -571,7 +579,7 @@ export default function BreakdownDetailPage() {
       partsCost: state.partsCost,
       linkedParts: state.linkedParts,
     });
-    setDowntimeMinutes(computeDefaultDowntimeMinutes(updated.reported_at));
+    setDowntimeMinutes("");
     setCloseTechnician(updated.technician ?? "");
     setAcceptingJob(false);
     setAcceptTechnician("");
@@ -605,8 +613,8 @@ export default function BreakdownDetailPage() {
       setActionTakenError(null);
     }
 
-    const downtimeValue = downtimeMinutes === "" ? NaN : Number(downtimeMinutes);
-    if (!Number.isFinite(downtimeValue) || downtimeValue < 0) {
+    const downtimeValue = downtimeMinutes === "" ? null : Number(downtimeMinutes);
+    if (downtimeValue !== null && (!Number.isFinite(downtimeValue) || downtimeValue < 0)) {
       setDowntimeError("กรุณากรอกเวลาหยุดเครื่องให้ถูกต้อง (ต้องไม่ติดลบ)");
       hasError = true;
     } else {
@@ -638,11 +646,12 @@ export default function BreakdownDetailPage() {
 
     const trimmedCloseTechnician = closeTechnician.trim();
 
+    const closedAtIso = new Date().toISOString();
     const { data, error } = await supabase
       .from("breakdowns")
       .update({
         status: "closed",
-        closed_at: new Date().toISOString(),
+        closed_at: closedAtIso,
         cause: trimmedCause,
         action_taken: trimmedActionTaken,
         downtime_minutes: downtimeValue,
@@ -698,7 +707,7 @@ export default function BreakdownDetailPage() {
       const rows = linesToInsert.map((line) => ({
         part_id: line.partId,
         machine_id: updated.machine_id,
-        replaced_at: todayIsoDate(),
+        replaced_at: line.replacedAt ?? toDateTimeLocal(closedAtIso).slice(0, 10),
         replaced_by: trimmedCloseTechnician === "" ? null : trimmedCloseTechnician,
         reason: "breakdown",
         qty_used: Math.trunc(Number(line.qtyUsed)),
@@ -875,79 +884,139 @@ export default function BreakdownDetailPage() {
     router.refresh();
   }
 
-  async function handleReopenClick() {
-    if (state.status !== "loaded") return;
+  function resetHistoryForm(breakdown: BreakdownDetail, parts: PartLine[]) {
+    setCause(breakdown.cause ?? "");
+    setActionTaken(breakdown.action_taken ?? "");
+    setDowntimeMinutes(breakdown.downtime_minutes ?? "");
+    setRepairCost(coerceNumber(breakdown.repair_cost));
+    setCloseTechnician(breakdown.technician ?? "");
+    setOperatingImpact(breakdown.operating_impact);
+    setClosedAtLocal(toDateTimeLocal(breakdown.closed_at));
+    setPartLines(parts.map((line) => ({ ...line })));
+    setLineErrors({});
+    setCloseFormError(null);
+  }
 
-    const confirmed = window.confirm(
-      "เปิดใบงานนี้เพื่อแก้ไข? สถานะจะกลับเป็น 'กำลังซ่อม' จนกว่าจะปิดงานอีกครั้ง"
-    );
-    if (!confirmed) return;
-
-    setReopening(true);
+  function handleHistoryEditClick() {
+    if (state.status !== "loaded" || state.breakdown.status !== "closed") return;
+    resetHistoryForm(state.breakdown, originalPartLines);
     setReopenNotice(null);
-    setShowCloseSuccess(false);
+    setEditingHistory(true);
+  }
 
-    // Guard against a race: only reopen if the row is still 'closed'
-    // server-side. If another user (or tab) already reopened it, this
-    // UPDATE matches zero rows -- that is a no-op with a Thai notice, not
-    // an error.
+  function handleHistoryCancel() {
+    if (state.status !== "loaded") return;
+    resetHistoryForm(state.breakdown, originalPartLines);
+    setEditingHistory(false);
+  }
+
+  async function handleHistorySave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (state.status !== "loaded" || state.breakdown.status !== "closed") return;
+
+    let hasError = false;
+    if (!isOperatingImpact(operatingImpact)) {
+      setOperatingImpactError("กรุณาเลือกผลกระทบต่อการเดินเครื่อง");
+      hasError = true;
+    } else setOperatingImpactError(null);
+
+    // A datetime-local input has minute precision. Reuse the exact stored ISO
+    // value when its visible value is unchanged so seconds/milliseconds are
+    // never lost during a text-only historical correction.
+    const closedAtIso =
+      closedAtLocal && closedAtLocal === toDateTimeLocal(state.breakdown.closed_at)
+        ? state.breakdown.closed_at ?? ""
+        : closedAtLocal
+          ? fromDateTimeLocal(closedAtLocal)
+          : "";
+    if (!closedAtIso || new Date(closedAtIso).getTime() < new Date(state.breakdown.reported_at).getTime()) {
+      setCloseFormError("วันเวลาปิดงานต้องไม่น้อยกว่าวันเวลาที่แจ้ง");
+      hasError = true;
+    } else setCloseFormError(null);
+
+    const downtimeValue = downtimeMinutes === "" ? null : Number(downtimeMinutes);
+    if (downtimeValue !== null && (!Number.isFinite(downtimeValue) || downtimeValue < 0)) {
+      setDowntimeError("กรุณากรอกเวลาหยุดเครื่องให้ถูกต้อง (ต้องไม่ติดลบ)");
+      hasError = true;
+    } else setDowntimeError(null);
+
+    const repairCostValue = repairCost === "" ? 0 : Number(repairCost);
+    if (!Number.isFinite(repairCostValue) || repairCostValue < 0) {
+      setCloseFormError("ค่าซ่อมต้องไม่ติดลบ");
+      hasError = true;
+    }
+    const newLineErrors: Record<string, string> = {};
+    for (const line of partLines) {
+      const message = validatePartLine(line);
+      if (message) { newLineErrors[line.key] = message; hasError = true; }
+    }
+    setLineErrors(newLineErrors);
+    if (hasError || !isOperatingImpact(operatingImpact)) return;
+
+    setClosing(true);
     const { data, error } = await supabase
       .from("breakdowns")
-      .update({ status: "in_progress", closed_at: null })
+      .update({
+        operating_impact: operatingImpact,
+        cause: cause.trim() || null,
+        action_taken: actionTaken.trim() || null,
+        downtime_minutes: downtimeValue,
+        repair_cost: repairCostValue,
+        technician: closeTechnician.trim() || null,
+        closed_at: closedAtIso,
+      })
       .eq("id", state.breakdown.id)
       .eq("status", "closed")
       .select(BREAKDOWN_SELECT)
       .maybeSingle();
 
-    if (error) {
-      setReopenNotice(error.message);
-      setReopening(false);
-      return;
-    }
-
-    if (!data) {
-      const fresh = await supabase
-        .from("breakdowns")
-        .select(BREAKDOWN_SELECT)
-        .eq("id", state.breakdown.id)
-        .maybeSingle();
-
+    if (error || !data) {
+      const fresh = await supabase.from("breakdowns").select(BREAKDOWN_SELECT)
+        .eq("id", state.breakdown.id).maybeSingle();
       if (fresh.data) {
-        const freshBreakdown = normalizeBreakdown(
-          fresh.data as unknown as RawBreakdownDetail
-        );
-        setState({
-          status: "loaded",
-          breakdown: freshBreakdown,
-          partsCost: state.partsCost,
-          linkedParts: state.linkedParts,
-        });
+        const latest = normalizeBreakdown(fresh.data as unknown as RawBreakdownDetail);
+        setState({ ...state, breakdown: latest });
+        resetHistoryForm(latest, originalPartLines);
       }
-      setReopenNotice(
-        "ใบงานนี้ไม่ใช่สถานะ 'ปิดงานแล้ว' อีกต่อไป (อาจถูกเปิดแก้ไขไปแล้วโดยผู้อื่นหรือแท็บอื่น) ระบบได้อัปเดตหน้าจอเป็นสถานะล่าสุดให้แล้ว"
-      );
-      setReopening(false);
+      setReopenNotice(error?.message ?? "สถานะใบงานถูกเปลี่ยนโดยผู้ใช้อื่น ระบบแสดงข้อมูลล่าสุดแล้วและไม่ได้บันทึกการแก้ไข");
+      setEditingHistory(false);
+      setClosing(false);
       return;
     }
-
-    // cause/action_taken/downtime/repair_cost/technician and the parts
-    // editor's lines are already correctly populated from the initial
-    // load's loadBreakdown() effect (it prefills them regardless of
-    // status), so reopening only needs to flip the breakdown's own status.
-    setCauseError(null);
-    setActionTakenError(null);
-    setDowntimeError(null);
-    setCloseFormError(null);
-    setLineErrors({});
 
     const updated = normalizeBreakdown(data as unknown as RawBreakdownDetail);
-    setState({
-      status: "loaded",
-      breakdown: updated,
-      partsCost: state.partsCost,
-      linkedParts: state.linkedParts,
-    });
-    setReopening(false);
+    const { idsToDelete, linesToInsert } = computePartsDiff(originalPartLines, partLines);
+    let partsError: string | null = null;
+    if (idsToDelete.length) {
+      const result = await supabase.from("part_replacements").delete().in("id", idsToDelete);
+      partsError = result.error?.message ?? null;
+    }
+    if (!partsError && linesToInsert.length) {
+      const effectiveDate = closedAtLocal.slice(0, 10);
+      const result = await supabase.from("part_replacements").insert(linesToInsert.map((line) => ({
+        part_id: line.partId,
+        machine_id: updated.machine_id,
+        replaced_at: line.replacedAt ?? effectiveDate,
+        replaced_by: closeTechnician.trim() || null,
+        reason: "breakdown",
+        qty_used: Math.trunc(Number(line.qtyUsed)),
+        unit_cost: Number(line.unitCost),
+        breakdown_id: updated.id,
+        notes: null,
+      })));
+      partsError = result.error?.message ?? null;
+    }
+
+    const [partsCost, refreshedParts] = await Promise.all([
+      fetchPartsCost(updated.id), fetchExistingPartLines(updated.id),
+    ]);
+    setOriginalPartLines(refreshedParts.lines);
+    setPartLines(refreshedParts.lines);
+    setState({ ...state, breakdown: updated, partsCost });
+    setEditingHistory(false);
+    setClosing(false);
+    if (partsError) setPartsInsertWarning(`บันทึกข้อมูลใบงานแล้ว แต่บันทึกรายการอะไหล่ไม่ครบถ้วน: ${partsError} กรุณาตรวจสอบอีกครั้ง`);
+    else setShowCloseSuccess(true);
   }
 
   useEffect(() => {
@@ -1243,7 +1312,7 @@ export default function BreakdownDetailPage() {
                   htmlFor="downtime_minutes"
                   className="block text-sm font-medium"
                 >
-                  เวลาหยุดเครื่อง (นาที)*
+                  เวลาหยุดเครื่อง (นาที)
                 </label>
                 <input
                   id="downtime_minutes"
@@ -1258,6 +1327,7 @@ export default function BreakdownDetailPage() {
                   }
                   className={inputClassName}
                 />
+                <p className="mt-1 text-xs leading-5 text-primary/60">หากเลือก &quot;เครื่องหยุด / ใช้งานไม่ได้&quot; และเว้นว่าง ระบบจะคำนวณจากเวลาแจ้งถึงเวลาปิดงานให้อัตโนมัติ หากกรอกเอง ระบบจะใช้ค่าที่กรอก</p>
                 {downtimeError && (
                   <p className="mt-1 text-sm text-red-700">{downtimeError}</p>
                 )}
@@ -1343,16 +1413,43 @@ export default function BreakdownDetailPage() {
           {/* View C: closed -> read-only summary */}
           {state.breakdown.status === "closed" && (
             <div className="mt-4 space-y-4">
-              {canWorkOnLocation(access, state.breakdown.machines?.location ?? null) && <button
+              {!editingHistory && canWorkOnLocation(access, state.breakdown.machines?.location ?? null) && <button
                 type="button"
-                onClick={handleReopenClick}
-                disabled={reopening}
-                className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-md border border-primary/20 px-4 text-sm font-medium text-primary hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-70"
+                onClick={handleHistoryEditClick}
+                className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-md border border-primary/20 px-4 text-sm font-medium text-primary hover:bg-primary/5"
               >
                 <Pencil size={16} aria-hidden="true" />
-                <span>{reopening ? "กำลังเปิดใบงาน..." : "แก้ไขใบงาน"}</span>
+                <span>แก้ไขประวัติ</span>
               </button>}
 
+              {editingHistory && (
+                <form onSubmit={handleHistorySave} className="space-y-4 rounded-lg border border-primary/10 bg-white p-4">
+                  <OperatingImpactField value={operatingImpact} onChange={(value) => setOperatingImpact(value)} error={operatingImpactError} />
+                  <div><label htmlFor="history_cause" className="block text-sm font-medium">สาเหตุ</label><textarea id="history_cause" rows={3} value={cause} onChange={(e) => setCause(e.target.value)} className={inputClassName} /></div>
+                  <div><label htmlFor="history_action" className="block text-sm font-medium">วิธีการแก้ไข</label><textarea id="history_action" rows={3} value={actionTaken} onChange={(e) => setActionTaken(e.target.value)} className={inputClassName} /></div>
+                  <div>
+                    <label htmlFor="history_closed_at" className="block text-sm font-medium">วันเวลาปิดงาน</label>
+                    <input id="history_closed_at" type="datetime-local" value={closedAtLocal} onChange={(e) => setClosedAtLocal(e.target.value)} className={`${inputClassName} max-w-full`} />
+                  </div>
+                  <div>
+                    <label htmlFor="history_downtime" className="block text-sm font-medium">เวลาหยุดเครื่อง (นาที)</label>
+                    <input id="history_downtime" type="number" min="0" step="1" value={downtimeMinutes} onChange={(e) => setDowntimeMinutes(e.target.value === "" ? "" : Number(e.target.value))} className={inputClassName} />
+                    <p className="mt-1 text-xs leading-5 text-primary/60">หากเลือก &quot;เครื่องหยุด / ใช้งานไม่ได้&quot; และเว้นว่าง ระบบจะคำนวณจากเวลาแจ้งถึงเวลาปิดงานให้อัตโนมัติ หากกรอกเอง ระบบจะใช้ค่าที่กรอก หากต้องการให้ระบบคำนวณใหม่ ให้ล้างค่าเวลาหยุดเครื่องแล้วบันทึก</p>
+                    {downtimeMinutes === "" && operatingImpact === "stopped" && closedAtLocal && (() => { const preview = computeDowntimePreview(state.breakdown.reported_at, fromDateTimeLocal(closedAtLocal)); return preview === null ? null : <p className="mt-1 text-sm font-medium text-accent">คำนวณอัตโนมัติ: {preview.toLocaleString("en-US")} นาที ({formatDowntimeThai(preview)})</p>; })()}
+                    {downtimeError && <p className="mt-1 text-sm text-red-700">{downtimeError}</p>}
+                  </div>
+                  <div><label htmlFor="history_cost" className="block text-sm font-medium">ค่าซ่อม (บาท)</label><input id="history_cost" type="number" min="0" step="0.01" value={repairCost} onChange={(e) => setRepairCost(e.target.value === "" ? "" : Number(e.target.value))} className={inputClassName} /></div>
+                  <div><label htmlFor="history_technician" className="block text-sm font-medium">ผู้ซ่อม</label><input id="history_technician" value={closeTechnician} onChange={(e) => setCloseTechnician(e.target.value)} className={inputClassName} /></div>
+                  <PartsUsedEditor linkedParts={state.linkedParts} lines={partLines} onChange={setPartLines} lineErrors={lineErrors} />
+                  {closeFormError && <p className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">{closeFormError}</p>}
+                  <div className="grid grid-cols-2 gap-3">
+                    <button type="submit" disabled={closing} className="min-h-[48px] rounded-md bg-accent px-3 text-sm font-medium text-white disabled:opacity-70">{closing ? "กำลังบันทึก..." : "บันทึกการแก้ไข"}</button>
+                    <button type="button" onClick={handleHistoryCancel} disabled={closing} className="min-h-[48px] rounded-md border border-primary/20 px-3 text-sm font-medium text-primary">ยกเลิก</button>
+                  </div>
+                </form>
+              )}
+
+              {!editingHistory && <>
               <div className="rounded-lg border border-primary/10 bg-white p-4">
                 <dl className="space-y-2 text-sm">
                   <div>
@@ -1420,6 +1517,7 @@ export default function BreakdownDetailPage() {
                   </span>
                 </div>
               </div>
+              </>}
             </div>
           )}
         </div>
