@@ -435,9 +435,10 @@ export default function BreakdownsPage() {
                               href={`/breakdowns/${breakdown.id}`}
                               className="block whitespace-nowrap px-2 py-3 text-primary/70"
                             >
-                              {breakdown.status === "closed" &&
-                              breakdown.downtime_minutes != null
-                                ? formatDowntimeThai(breakdown.downtime_minutes)
+                              {breakdown.status === "closed"
+                                ? breakdown.downtime_minutes != null
+                                  ? formatDowntimeThai(breakdown.downtime_minutes)
+                                  : "-"
                                 : ""}
                             </Link>
                           </td>
@@ -477,13 +478,14 @@ export default function BreakdownsPage() {
                       <p className="mt-2 break-words text-sm text-primary/80">
                         {truncateSymptom(breakdown.symptom)}
                       </p>
-                      {breakdown.status === "closed" &&
-                        breakdown.downtime_minutes != null && (
-                          <p className="mt-2 text-xs text-primary/60">
-                            เวลาหยุดเครื่อง:{" "}
-                            {formatDowntimeThai(breakdown.downtime_minutes)}
-                          </p>
-                        )}
+                      {breakdown.status === "closed" && (
+                        <p className="mt-2 text-xs text-primary/60">
+                          เวลาหยุดเครื่อง:{" "}
+                          {breakdown.downtime_minutes != null
+                            ? formatDowntimeThai(breakdown.downtime_minutes)
+                            : "-"}
+                        </p>
+                      )}
                     </Link>
                   );
                 })}
