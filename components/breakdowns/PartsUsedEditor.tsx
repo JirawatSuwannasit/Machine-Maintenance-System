@@ -18,6 +18,9 @@ export type PartLine = {
   // diff against the originally-loaded lines on save (MMS-024 Part B) --
   // never mutated by this component itself.
   id: string | null;
+  // Original historical date for an existing replacement. The page keeps
+  // this date when a changed row is deleted and reinserted.
+  replacedAt: string | null;
   partId: string;
   qtyUsed: number | "";
   unitCost: number | "";
@@ -58,6 +61,7 @@ export default function PartsUsedEditor({
       {
         key: `line-${nextKeyRef.current}`,
         id: null,
+        replacedAt: null,
         partId: "",
         qtyUsed: 1,
         unitCost: 0,
