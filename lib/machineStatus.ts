@@ -12,6 +12,12 @@ export type MachineStatus =
 // Change this single constant to retune the status rules.
 export const DUE_SOON_DAYS = 7;
 
+// Shared PostgREST predicate for breakdowns whose operating impact is still
+// active. A not-repaired administrative closure remains active until an
+// authorized user records impact_cleared_at.
+export const ONGOING_BREAKDOWN_FILTER =
+  "status.in.(open,in_progress),and(status.eq.closed,closure_outcome.eq.not_repaired,impact_cleared_at.is.null)";
+
 export const MACHINE_STATUS_ORDER: MachineStatus[] = [
   "red",
   "limited",

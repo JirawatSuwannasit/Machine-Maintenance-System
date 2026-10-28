@@ -20,6 +20,7 @@ type BreakdownRow = {
   downtime_minutes: number | null;
   status: string;
   operating_impact: OperatingImpact;
+  closure_outcome: "repaired" | "not_repaired" | null;
   machines: MachineRelation | null;
 };
 
@@ -78,7 +79,7 @@ async function fetchBreakdownsData(): Promise<FetchResult> {
     supabase
       .from("breakdowns")
       .select(
-        "id, machine_id, reported_at, symptom, downtime_minutes, status, operating_impact, machines(machine_code, machine_name)"
+        "id, machine_id, reported_at, symptom, downtime_minutes, status, operating_impact, closure_outcome, machines(machine_code, machine_name)"
       )
       // PostgREST can't order by a custom status-rank expression, only real
       // columns. So the query orders by the easy part (newest first), and
@@ -394,6 +395,11 @@ export default function BreakdownsPage() {
                               className="flex items-center px-2 py-3"
                             >
                               <StatusBadge status={breakdown.status} />
+                              {breakdown.status === "closed" && breakdown.closure_outcome && (
+                                <span className={`ml-2 text-xs font-medium ${breakdown.closure_outcome === "not_repaired" ? "text-amber-800" : "text-green-700"}`}>
+                                  {breakdown.closure_outcome === "not_repaired" ? "ไม่ซ่อม" : "แก้ไขเรียบร้อย"}
+                                </span>
+                              )}
                             </Link>
                           </td>
                           <td className="p-0">
@@ -478,6 +484,11 @@ export default function BreakdownsPage() {
                       <p className="mt-2 break-words text-sm text-primary/80">
                         {truncateSymptom(breakdown.symptom)}
                       </p>
+                      {breakdown.status === "closed" && breakdown.closure_outcome && (
+                        <p className={`mt-2 text-xs font-medium ${breakdown.closure_outcome === "not_repaired" ? "text-amber-800" : "text-green-700"}`}>
+                          ผลการปิดงาน: {breakdown.closure_outcome === "not_repaired" ? "ไม่ซ่อม" : "แก้ไขเรียบร้อย"}
+                        </p>
+                      )}
                       {breakdown.status === "closed" && (
                         <p className="mt-2 text-xs text-primary/60">
                           เวลาหยุดเครื่อง:{" "}

@@ -10,6 +10,7 @@ import {
   MACHINE_STATUS_COLORS,
   MACHINE_STATUS_LABELS,
   type MachineStatus,
+  ONGOING_BREAKDOWN_FILTER,
 } from "@/lib/machineStatus";
 import type { MachineRecord } from "@/components/machine/MachineForm";
 import BreakdownHistoryTab from "@/components/machine/BreakdownHistoryTab";
@@ -97,7 +98,7 @@ export default function MachineProfilePage() {
             .from("breakdowns")
             .select("operating_impact")
             .eq("machine_id", params.id)
-            .in("status", ["open", "in_progress"]),
+            .or(ONGOING_BREAKDOWN_FILTER),
           supabase
             .from("pm_plans")
             .select("next_due_date")

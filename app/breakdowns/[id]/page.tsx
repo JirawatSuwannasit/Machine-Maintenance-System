@@ -35,6 +35,9 @@ type BreakdownDetail = {
   status: string;
   operating_impact: OperatingImpact;
   closed_at: string | null;
+  closure_outcome: "repaired" | "not_repaired" | null;
+  no_repair_reason: string | null;
+  impact_cleared_at: string | null;
   machines: MachineRelation | null;
 };
 
@@ -60,7 +63,7 @@ function normalizeBreakdown(raw: RawBreakdownDetail): BreakdownDetail {
 }
 
 const BREAKDOWN_SELECT =
-  "id, machine_id, reported_at, symptom, cause, action_taken, downtime_minutes, repair_cost, technician, status, operating_impact, closed_at, machines(machine_code, machine_name, location)";
+  "id, machine_id, reported_at, symptom, cause, action_taken, downtime_minutes, repair_cost, technician, status, operating_impact, closed_at, closure_outcome, no_repair_reason, impact_cleared_at, machines(machine_code, machine_name, location)";
 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   open: {
@@ -460,6 +463,10 @@ export default function BreakdownDetailPage() {
   const [progressError, setProgressError] = useState<string | null>(null);
   const [savingProgress, setSavingProgress] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [showNoRepairForm, setShowNoRepairForm] = useState(false);
+  const [noRepairReason, setNoRepairReason] = useState("");
+  const [noRepairError, setNoRepairError] = useState<string | null>(null);
+  const [clearingImpact, setClearingImpact] = useState(false);
   const [showCloseSuccess, setShowCloseSuccess] = useState(false);
 
   const [partLines, setPartLines] = useState<PartLine[]>([]);
@@ -563,6 +570,7 @@ export default function BreakdownDetailPage() {
       .from("breakdowns")
       .update({ status: "in_progress", technician: trimmed })
       .eq("id", state.breakdown.id)
+      .eq("status", "open")
       .select(BREAKDOWN_SELECT)
       .maybeSingle();
 
@@ -586,9 +594,8 @@ export default function BreakdownDetailPage() {
     setAcceptSubmitting(false);
   }
 
-  async function handleCloseSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (state.status !== "loaded") return;
+  async function finishBreakdown(outcome: "repaired" | "not_repaired") {
+    if (closing || state.status !== "loaded" || state.breakdown.status !== "in_progress") return;
 
     const trimmedCause = cause.trim();
     const trimmedActionTaken = actionTaken.trim();
@@ -606,11 +613,18 @@ export default function BreakdownDetailPage() {
     } else {
       setCauseError(null);
     }
-    if (trimmedActionTaken === "") {
+    if (outcome === "repaired" && trimmedActionTaken === "") {
       setActionTakenError("กรุณากรอกวิธีการแก้ไข");
       hasError = true;
     } else {
       setActionTakenError(null);
+    }
+    const trimmedNoRepairReason = noRepairReason.trim();
+    if (outcome === "not_repaired" && trimmedNoRepairReason === "") {
+      setNoRepairError("กรุณากรอกเหตุผลที่ไม่ซ่อม");
+      hasError = true;
+    } else {
+      setNoRepairError(null);
     }
 
     const downtimeValue = downtimeMinutes === "" ? null : Number(downtimeMinutes);
@@ -630,7 +644,7 @@ export default function BreakdownDetailPage() {
     }
 
     const newLineErrors: Record<string, string> = {};
-    for (const line of partLines) {
+    if (outcome === "repaired") for (const line of partLines) {
       const message = validatePartLine(line);
       if (message) {
         newLineErrors[line.key] = message;
@@ -653,13 +667,17 @@ export default function BreakdownDetailPage() {
         status: "closed",
         closed_at: closedAtIso,
         cause: trimmedCause,
-        action_taken: trimmedActionTaken,
+        action_taken: trimmedActionTaken || null,
         downtime_minutes: downtimeValue,
+        closure_outcome: outcome,
+        no_repair_reason: outcome === "not_repaired" ? trimmedNoRepairReason : null,
+        impact_cleared_at: null,
         repair_cost: repairCostValue,
         technician: trimmedCloseTechnician === "" ? null : trimmedCloseTechnician,
         operating_impact: operatingImpact,
       })
       .eq("id", state.breakdown.id)
+      .eq("status", "in_progress")
       .select(BREAKDOWN_SELECT)
       .maybeSingle();
 
@@ -688,10 +706,9 @@ export default function BreakdownDetailPage() {
     // without its old row having actually been deleted would double-
     // decrement stock. This UI must never write stock_qty or machine_parts
     // dates directly; both triggers own those.
-    const { idsToDelete, linesToInsert } = computePartsDiff(
-      originalPartLines,
-      partLines
-    );
+    const { idsToDelete, linesToInsert } = outcome === "repaired"
+      ? computePartsDiff(originalPartLines, partLines)
+      : { idsToDelete: [], linesToInsert: [] };
 
     let partsErrorMessage: string | null = null;
 
@@ -746,6 +763,8 @@ export default function BreakdownDetailPage() {
       linkedParts: state.linkedParts,
     });
     setClosing(false);
+    setShowNoRepairForm(false);
+    setNoRepairReason("");
 
     if (partsErrorMessage) {
       setPartsInsertWarning(
@@ -754,6 +773,41 @@ export default function BreakdownDetailPage() {
     } else {
       setShowCloseSuccess(true);
     }
+  }
+
+  function handleCloseSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void finishBreakdown("repaired");
+  }
+
+  function handleNotRepairedSubmit() {
+    if (noRepairReason.trim() === "") {
+      setNoRepairError("กรุณากรอกเหตุผลที่ไม่ซ่อม");
+      return;
+    }
+    if (!window.confirm("ยืนยันปิดงานโดยไม่ซ่อม? ผลกระทบต่อเครื่องจักรจะยังคงแสดงอยู่จนกว่าจะยืนยันว่าไม่มีผลกระทบแล้ว")) return;
+    void finishBreakdown("not_repaired");
+  }
+
+  async function handleClearImpact() {
+    if (state.status !== "loaded" || state.breakdown.closure_outcome !== "not_repaired" || state.breakdown.impact_cleared_at) return;
+    if (!window.confirm("ยืนยันว่าเครื่องจักรไม่ได้รับผลกระทบจากใบงานนี้แล้ว? ประวัติการปิดงานแบบไม่ซ่อมจะยังคงอยู่")) return;
+    setClearingImpact(true);
+    const clearedAt = new Date().toISOString();
+    const { data, error } = await supabase.from("breakdowns")
+      .update({ impact_cleared_at: clearedAt })
+      .eq("id", state.breakdown.id)
+      .eq("status", "closed")
+      .eq("closure_outcome", "not_repaired")
+      .is("impact_cleared_at", null)
+      .select(BREAKDOWN_SELECT)
+      .maybeSingle();
+    if (error || !data) {
+      setReopenNotice(error?.message ?? "ไม่สามารถยืนยันการสิ้นสุดผลกระทบได้ เนื่องจากข้อมูลถูกเปลี่ยนโดยผู้ใช้อื่น");
+    } else {
+      setState({ ...state, breakdown: normalizeBreakdown(data as unknown as RawBreakdownDetail) });
+    }
+    setClearingImpact(false);
   }
 
   async function handleSaveProgress() {
@@ -1388,7 +1442,50 @@ export default function BreakdownDetailPage() {
                 </div>
               )}
 
-              <div className="grid gap-3 sm:grid-cols-2">
+              {showNoRepairForm && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+                  <label htmlFor="no_repair_reason" className="block text-sm font-medium text-amber-950">
+                    เหตุผลที่ไม่ซ่อม*
+                  </label>
+                  <textarea
+                    id="no_repair_reason"
+                    rows={3}
+                    value={noRepairReason}
+                    onChange={(event) => {
+                      setNoRepairReason(event.target.value);
+                      setNoRepairError(null);
+                    }}
+                    className={inputClassName}
+                  />
+                  {noRepairError && <p className="mt-1 text-sm text-red-700">{noRepairError}</p>}
+                  <p className="mt-2 text-xs leading-5 text-amber-900">
+                    การปิดงานแบบไม่ซ่อมจะคงผลกระทบของเครื่องจักรไว้ และจะไม่บันทึกรายการอะไหล่ใหม่จากแบบฟอร์มนี้
+                  </p>
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={handleNotRepairedSubmit}
+                      disabled={closing || savingProgress}
+                      className="min-h-[48px] rounded-md bg-amber-700 px-3 text-sm font-medium text-white disabled:opacity-70"
+                    >
+                      {closing ? "กำลังบันทึก..." : "ยืนยันไม่ซ่อม"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowNoRepairForm(false);
+                        setNoRepairError(null);
+                      }}
+                      disabled={closing}
+                      className="min-h-[48px] rounded-md border border-amber-400 bg-white px-3 text-sm font-medium text-amber-900"
+                    >
+                      ยกเลิก
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid gap-3 sm:grid-cols-3">
                 <button
                   type="button"
                   onClick={handleSaveProgress}
@@ -1404,7 +1501,15 @@ export default function BreakdownDetailPage() {
                   disabled={closing || savingProgress}
                   className="flex min-h-[48px] w-full items-center justify-center rounded-md bg-accent px-6 text-base font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  {closing ? "กำลังบันทึก..." : "ปิดงาน"}
+                  {closing ? "กำลังบันทึก..." : "แก้ไขเรียบร้อย"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowNoRepairForm(true)}
+                  disabled={closing || savingProgress}
+                  className="flex min-h-[48px] w-full items-center justify-center rounded-md border border-amber-600 px-4 text-base font-medium text-amber-800 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  ไม่ซ่อม
                 </button>
               </div>
             </form>
@@ -1413,6 +1518,34 @@ export default function BreakdownDetailPage() {
           {/* View C: closed -> read-only summary */}
           {state.breakdown.status === "closed" && (
             <div className="mt-4 space-y-4">
+              {state.breakdown.closure_outcome === "not_repaired" && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+                  <p className="font-bold text-amber-950">ปิดงาน — ไม่ซ่อม</p>
+                  <p className="mt-1 text-sm text-amber-900">
+                    เหตุผลที่ไม่ซ่อม: {state.breakdown.no_repair_reason ?? "-"}
+                  </p>
+                  <p className="mt-2 text-xs text-amber-800">
+                    {state.breakdown.impact_cleared_at
+                      ? `ยืนยันสิ้นสุดผลกระทบแล้วเมื่อ ${formatDateTimeThai(state.breakdown.impact_cleared_at)}`
+                      : "ผลกระทบต่อเครื่องจักรยังคงทำงานอยู่"}
+                  </p>
+                  {!state.breakdown.impact_cleared_at && canWorkOnLocation(access, state.breakdown.machines?.location ?? null) && (
+                    <button
+                      type="button"
+                      onClick={handleClearImpact}
+                      disabled={clearingImpact}
+                      className="mt-3 min-h-[44px] w-full rounded-md border border-amber-600 bg-white px-4 text-sm font-medium text-amber-900 disabled:opacity-70"
+                    >
+                      {clearingImpact ? "กำลังบันทึก..." : "ยืนยันว่าไม่มีผลกระทบแล้ว"}
+                    </button>
+                  )}
+                </div>
+              )}
+              {state.breakdown.closure_outcome === "repaired" && (
+                <p className="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-800">
+                  ปิดงาน — แก้ไขเรียบร้อย
+                </p>
+              )}
               {!editingHistory && canWorkOnLocation(access, state.breakdown.machines?.location ?? null) && <button
                 type="button"
                 onClick={handleHistoryEditClick}

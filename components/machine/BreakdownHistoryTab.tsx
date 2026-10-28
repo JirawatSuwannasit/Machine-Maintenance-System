@@ -19,6 +19,7 @@ type BreakdownHistoryEntry = {
   repair_cost: number | string;
   status: string;
   operating_impact: OperatingImpact;
+  closure_outcome: "repaired" | "not_repaired" | null;
 };
 
 type FetchResult =
@@ -83,7 +84,7 @@ function formatMoneyThai(value: number | string): string {
 async function fetchBreakdownHistory(machineId: string): Promise<FetchResult> {
   const { data, error } = await supabase
     .from("breakdowns")
-    .select("id, reported_at, symptom, cause, downtime_minutes, repair_cost, status, operating_impact")
+    .select("id, reported_at, symptom, cause, downtime_minutes, repair_cost, status, operating_impact, closure_outcome")
     .eq("machine_id", machineId)
     .order("reported_at", { ascending: false });
 
@@ -174,6 +175,11 @@ export default function BreakdownHistoryTab({
                 <p className="mt-2 break-words text-sm text-primary">
                   {entry.symptom}
                 </p>
+                {entry.status === "closed" && entry.closure_outcome && (
+                  <p className={`mt-1 text-xs font-medium ${entry.closure_outcome === "not_repaired" ? "text-amber-800" : "text-green-700"}`}>
+                    ผลการปิดงาน: {entry.closure_outcome === "not_repaired" ? "ไม่ซ่อม" : "แก้ไขเรียบร้อย"}
+                  </p>
+                )}
                 {entry.cause && (
                   <p className="mt-1 break-words text-xs text-primary/60">
                     สาเหตุ: {entry.cause}
