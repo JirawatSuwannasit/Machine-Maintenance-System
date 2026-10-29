@@ -13,6 +13,7 @@ import {
   MACHINE_STATUS_COLORS,
   MACHINE_STATUS_LABELS,
   type MachineStatus,
+  ONGOING_BREAKDOWN_FILTER,
 } from "@/lib/machineStatus";
 import { formatDateThai, computeDueDiffDays, computeDueDisplay } from "@/lib/pmDueDate";
 
@@ -60,6 +61,7 @@ type BreakdownRow = {
   repair_cost: number | string;
   technician: string | null;
   operating_impact: OperatingImpact;
+  closure_outcome: "repaired" | "not_repaired" | null;
 };
 
 type PlanRelation = { pm_name: string };
@@ -229,7 +231,7 @@ const EARLIEST_ISO_DATE = "2000-01-01";
 // ===== Fetching =====
 
 const BREAKDOWN_SELECT =
-  "id, reported_at, symptom, cause, action_taken, downtime_minutes, repair_cost, technician, operating_impact";
+  "id, reported_at, symptom, cause, action_taken, downtime_minutes, repair_cost, technician, operating_impact, closure_outcome";
 const PM_RECORD_SELECT =
   "id, done_date, done_by, pm_cost, notes, checklist_result, pm_plans(pm_name)";
 const REPLACEMENT_SELECT =
@@ -287,7 +289,7 @@ async function loadReport(
       .from("breakdowns")
       .select("operating_impact")
       .eq("machine_id", machineId)
-      .in("status", ["open", "in_progress"]),
+      .or(ONGOING_BREAKDOWN_FILTER),
     supabase
       .from("pm_records")
       .select(PM_RECORD_SELECT)
@@ -930,6 +932,11 @@ export default function MachineReportPage() {
                           </td>
                           <td className="break-words py-2 pr-4 align-top text-primary/70 print:text-black">
                             {OPERATING_IMPACT_LABELS[row.operating_impact]}
+                            {row.closure_outcome && (
+                              <span className="block text-xs">
+                                {row.closure_outcome === "not_repaired" ? "ไม่ซ่อม" : "แก้ไขเรียบร้อย"}
+                              </span>
+                            )}
                           </td>
                           <td className="max-w-xs break-words py-2 pr-4 align-top text-primary/70 print:text-black">
                             {row.cause ?? "-"}
@@ -988,6 +995,11 @@ export default function MachineReportPage() {
                       <p className="mt-2 break-words text-sm text-primary">
                         {row.symptom}
                       </p>
+                      {row.closure_outcome && (
+                        <p className="mt-1 text-xs font-medium text-primary/70">
+                          ผลการปิดงาน: {row.closure_outcome === "not_repaired" ? "ไม่ซ่อม" : "แก้ไขเรียบร้อย"}
+                        </p>
+                      )}
                       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-primary/60">
                         <span>สาเหตุ: {row.cause ?? "-"}</span>
                         <span>วิธีแก้ไข: {row.action_taken ?? "-"}</span>

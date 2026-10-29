@@ -9,6 +9,7 @@ export type LinkedPart = {
   part_name: string;
   unit_cost: number;
   stock_qty: number;
+  stock_tracking_enabled: boolean;
 };
 
 export type PartLine = {
@@ -18,6 +19,9 @@ export type PartLine = {
   // diff against the originally-loaded lines on save (MMS-024 Part B) --
   // never mutated by this component itself.
   id: string | null;
+  // Original historical date for an existing replacement. The page keeps
+  // this date when a changed row is deleted and reinserted.
+  replacedAt: string | null;
   partId: string;
   qtyUsed: number | "";
   unitCost: number | "";
@@ -58,6 +62,7 @@ export default function PartsUsedEditor({
       {
         key: `line-${nextKeyRef.current}`,
         id: null,
+        replacedAt: null,
         partId: "",
         qtyUsed: 1,
         unitCost: 0,
@@ -120,7 +125,9 @@ export default function PartsUsedEditor({
                 const costNum = line.unitCost === "" ? 0 : line.unitCost;
                 const lineTotal = qtyNum * costNum;
                 const isOverStock =
-                  selectedPart != null && qtyNum > selectedPart.stock_qty;
+                  selectedPart != null &&
+                  selectedPart.stock_tracking_enabled &&
+                  qtyNum > selectedPart.stock_qty;
 
                 // A part chosen on another line is not selectable again --
                 // one line per part; a second unit of the same part is

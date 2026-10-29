@@ -20,6 +20,7 @@ type PartRelation = {
   part_name: string;
   stock_qty: number;
   min_stock: number;
+  stock_tracking_enabled: boolean;
 };
 
 type ScheduleRow = {
@@ -58,7 +59,7 @@ function normalizePartRelation(
 }
 
 const SCHEDULE_SELECT =
-  "id, machine_id, part_id, next_due_date, machines(id, machine_code, machine_name), spare_parts(id, part_code, part_name, stock_qty, min_stock)";
+  "id, machine_id, part_id, next_due_date, machines(id, machine_code, machine_name), spare_parts(id, part_code, part_name, stock_qty, min_stock, stock_tracking_enabled)";
 
 type Bucket = "overdue" | "upcoming";
 
@@ -88,6 +89,7 @@ function getShortageInfo(
   row: RowWithDiff,
   demandByPart: Map<string, number>
 ): ShortageInfo | null {
+  if (!row.spare_parts?.stock_tracking_enabled) return null;
   const demand = demandByPart.get(row.part_id) ?? 0;
   const stockQty = row.spare_parts?.stock_qty ?? 0;
   if (demand <= stockQty) return null;
@@ -201,6 +203,7 @@ function ScheduleGroupSection({
                 {rows.map((row) => {
                   const shortage = getShortageInfo(row, demandByPart);
                   const lowStock =
+                    Boolean(row.spare_parts?.stock_tracking_enabled) &&
                     (row.spare_parts?.stock_qty ?? 0) <
                     (row.spare_parts?.min_stock ?? 0);
                   return (
@@ -246,7 +249,9 @@ function ScheduleGroupSection({
                       <td className="py-3 pr-4">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-primary">
-                            {row.spare_parts?.stock_qty ?? 0} ชิ้น
+                            {row.spare_parts?.stock_tracking_enabled
+                              ? `${row.spare_parts.stock_qty} ชิ้น`
+                              : "ไม่สต๊อก"}
                           </span>
                           {lowStock && <LowStockBadge />}
                           {shortage && <InsufficientStockBadge />}
@@ -279,6 +284,7 @@ function ScheduleGroupSection({
             {rows.map((row) => {
               const shortage = getShortageInfo(row, demandByPart);
               const lowStock =
+                Boolean(row.spare_parts?.stock_tracking_enabled) &&
                 (row.spare_parts?.stock_qty ?? 0) <
                 (row.spare_parts?.min_stock ?? 0);
               return (
@@ -317,7 +323,9 @@ function ScheduleGroupSection({
                       {formatUrgencyLabel(row.diffDays)})
                     </span>
                     <span className="flex items-center gap-2">
-                      สต๊อก: {row.spare_parts?.stock_qty ?? 0} ชิ้น
+                      สต๊อก: {row.spare_parts?.stock_tracking_enabled
+                        ? `${row.spare_parts.stock_qty} ชิ้น`
+                        : "ไม่สต๊อก"}
                       {lowStock && <LowStockBadge />}
                       {shortage && <InsufficientStockBadge />}
                     </span>

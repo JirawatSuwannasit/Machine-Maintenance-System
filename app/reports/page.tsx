@@ -148,6 +148,7 @@ type BreakdownRow = {
   repair_cost: number | string;
   status: string;
   operating_impact: "running" | "limited" | "stopped";
+  closure_outcome: "repaired" | "not_repaired" | null;
 };
 type PmPlanRow = {
   id: string;
@@ -194,7 +195,7 @@ async function loadReportsData(from: string, to: string): Promise<LoadState> {
       supabase
         .from("breakdowns")
         .select(
-          "id, machine_id, reported_at, downtime_minutes, repair_cost, status, operating_impact"
+          "id, machine_id, reported_at, downtime_minutes, repair_cost, status, operating_impact, closure_outcome"
         )
         .gte("reported_at", from)
         .lt("reported_at", breakdownUpperBound),
@@ -576,7 +577,12 @@ export default function ReportsPage() {
       0
     );
 
-    const closedBreakdowns = breakdowns.filter((b) => b.status === "closed");
+    const closedBreakdowns = breakdowns.filter(
+      (b) =>
+        b.status === "closed" &&
+        b.closure_outcome !== "not_repaired" &&
+        b.downtime_minutes != null
+    );
     const mttrHours =
       closedBreakdowns.length === 0
         ? null

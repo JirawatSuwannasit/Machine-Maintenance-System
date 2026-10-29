@@ -17,10 +17,11 @@ type SparePartRow = {
   id: string;
   part_code: string;
   part_name: string;
-  default_lifespan_days: number;
+  default_lifespan_days: number | null;
   unit_cost: number | string;
   stock_qty: number;
   min_stock: number;
+  stock_tracking_enabled: boolean;
   machineBadges: string[];
 };
 
@@ -46,7 +47,7 @@ function normalizeMachineBadges(rows: RawMachinePartRow[]): string[] {
 }
 
 const PART_SELECT =
-  "id, part_code, part_name, default_lifespan_days, unit_cost, stock_qty, min_stock, machine_parts(machine_id, machines(machine_code))";
+  "id, part_code, part_name, default_lifespan_days, unit_cost, stock_qty, min_stock, stock_tracking_enabled, machine_parts(machine_id, machines(machine_code))";
 
 function formatMoneyThai(value: number | string): string {
   const num = typeof value === "string" ? parseFloat(value) : value;
@@ -200,7 +201,7 @@ export default function PartsPage() {
   const filteredParts = useMemo(() => {
     const normalized = searchText.trim().toLowerCase();
     return parts.filter((part) => {
-      if (lowStockOnly && part.stock_qty >= part.min_stock) return false;
+      if (lowStockOnly && (!part.stock_tracking_enabled || part.stock_qty >= part.min_stock)) return false;
       if (normalized) {
         const matchesCode = part.part_code.toLowerCase().includes(normalized);
         const matchesName = part.part_name.toLowerCase().includes(normalized);
@@ -294,7 +295,7 @@ export default function PartsPage() {
                   </thead>
                   <tbody>
                     {filteredParts.map((part) => {
-                      const isLowStock = part.stock_qty < part.min_stock;
+                      const isLowStock = part.stock_tracking_enabled && part.stock_qty < part.min_stock;
                       return (
                         <tr
                           key={part.id}
@@ -321,7 +322,9 @@ export default function PartsPage() {
                               href={`/parts/${part.id}`}
                               className="block whitespace-nowrap px-2 py-3 text-primary/70"
                             >
-                              {part.default_lifespan_days} วัน
+                              {part.default_lifespan_days != null
+                                ? `${part.default_lifespan_days} วัน`
+                                : "ไม่กำหนดรอบเปลี่ยน"}
                             </Link>
                           </td>
                           <td className="p-0">
@@ -337,8 +340,10 @@ export default function PartsPage() {
                               href={`/parts/${part.id}`}
                               className="flex items-center gap-2 px-2 py-3"
                             >
-                              <span className="text-primary">{part.stock_qty}</span>
-                              {isLowStock && <LowStockBadge />}
+                              {part.stock_tracking_enabled ? <>
+                                <span className="text-primary">{part.stock_qty}</span>
+                                {isLowStock && <LowStockBadge />}
+                              </> : <span className="font-medium text-primary/70">ไม่สต๊อก</span>}
                             </Link>
                           </td>
                           <td className="p-0">
@@ -359,7 +364,7 @@ export default function PartsPage() {
               {/* Mobile cards */}
               <div className="mt-6 space-y-3 md:hidden">
                 {filteredParts.map((part) => {
-                  const isLowStock = part.stock_qty < part.min_stock;
+                  const isLowStock = part.stock_tracking_enabled && part.stock_qty < part.min_stock;
                   return (
                     <Link
                       key={part.id}
@@ -379,9 +384,9 @@ export default function PartsPage() {
                       </div>
 
                       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-primary/60">
-                        <span>อายุใช้งาน: {part.default_lifespan_days} วัน</span>
+                        <span>อายุใช้งาน: {part.default_lifespan_days != null ? `${part.default_lifespan_days} วัน` : "ไม่กำหนดรอบเปลี่ยน"}</span>
                         <span>ราคา: {formatMoneyThai(part.unit_cost)}</span>
-                        <span>สต๊อก: {part.stock_qty}</span>
+                        <span>สต๊อก: {part.stock_tracking_enabled ? part.stock_qty : "ไม่สต๊อก"}</span>
                       </div>
 
                       <div className="mt-2">

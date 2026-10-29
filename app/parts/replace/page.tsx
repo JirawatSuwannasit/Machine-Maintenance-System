@@ -23,15 +23,17 @@ type PartSummary = {
   id: string;
   part_code: string;
   part_name: string;
-  default_lifespan_days: number;
+  default_lifespan_days: number | null;
   unit_cost: number | string;
   stock_qty: number;
+  stock_tracking_enabled: boolean;
 };
 
 type LinkRow = {
   id: string;
   machine_id: string;
   lifespan_override_days: number | null;
+  schedule_disabled: boolean;
   last_replaced_at: string | null;
   next_due_date: string | null;
   machines: MachineRelation | null;
@@ -122,7 +124,10 @@ const inputClassName =
 // replacement-specific label ("ยังไม่เคยเปลี่ยน" instead of the
 // PM-flavoured "รอทำครั้งแรก"), matching the convention already
 // established in app/parts/[id]/page.tsx (MMS-015).
-function DueDateBadge({ nextDueDate }: { nextDueDate: string | null }) {
+function DueDateBadge({ nextDueDate, hasSchedule = true }: { nextDueDate: string | null; hasSchedule?: boolean }) {
+  if (!hasSchedule) {
+    return <span className="inline-flex w-fit rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">ไม่กำหนดรอบเปลี่ยน</span>;
+  }
   if (!nextDueDate) {
     return (
       <span className="inline-flex w-fit items-center whitespace-nowrap rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
@@ -222,7 +227,7 @@ function PartReplacePageInner() {
 
       const partRes = await supabase
         .from("spare_parts")
-        .select("id, part_code, part_name, default_lifespan_days, unit_cost, stock_qty")
+        .select("id, part_code, part_name, default_lifespan_days, unit_cost, stock_qty, stock_tracking_enabled")
         .eq("id", partIdParam)
         .maybeSingle();
 
@@ -245,7 +250,7 @@ function PartReplacePageInner() {
       const linksRes = await supabase
         .from("machine_parts")
         .select(
-          "id, machine_id, lifespan_override_days, last_replaced_at, next_due_date, machines(id, machine_code, machine_name, location)"
+          "id, machine_id, lifespan_override_days, schedule_disabled, last_replaced_at, next_due_date, machines(id, machine_code, machine_name, location)"
         )
         .eq("part_id", partIdParam);
 
@@ -540,7 +545,13 @@ function PartReplacePageInner() {
                     {option.machines?.machine_name ?? "(ไม่พบข้อมูลเครื่องจักร)"}
                   </p>
                 </div>
-                <DueDateBadge nextDueDate={option.next_due_date} />
+                <DueDateBadge
+                  nextDueDate={option.next_due_date}
+                  hasSchedule={
+                    !option.schedule_disabled &&
+                    (option.lifespan_override_days ?? state.part.default_lifespan_days) != null
+                  }
+                />
               </button>
             ))}
           </div>
@@ -551,7 +562,9 @@ function PartReplacePageInner() {
 
   // state.status === "loaded"
   const { part, link, siblingCount, breakdownOptions } = state;
-  const effectiveDays = link.lifespan_override_days ?? part.default_lifespan_days;
+  const effectiveDays = link.schedule_disabled
+    ? null
+    : link.lifespan_override_days ?? part.default_lifespan_days;
   const isOverride = link.lifespan_override_days != null;
 
   return (
@@ -569,19 +582,25 @@ function PartReplacePageInner() {
           <div className="rounded-lg border border-primary/10 bg-white p-4">
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between gap-4">
+                <dt className="text-primary/60">วันที่เปลี่ยน</dt>
+                <dd className="text-right text-primary">{formatDateThai(replacedAt)}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
                 <dt className="text-primary/60">
                   กำหนดเปลี่ยนรอบถัดไปของเครื่องนี้
                 </dt>
                 <dd className="text-right text-primary">
                   {submitResult.nextDueDate
                     ? formatDateThai(submitResult.nextDueDate)
-                    : "-"}
+                    : "ไม่กำหนดรอบเปลี่ยน"}
                 </dd>
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-primary/60">สต๊อกคงเหลือ (ก้อนรวม)</dt>
                 <dd className="text-right text-primary">
-                  {submitResult.stockQty != null
+                  {!part.stock_tracking_enabled
+                    ? "ไม่สต๊อก"
+                    : submitResult.stockQty != null
                     ? `${submitResult.stockQty} ชิ้น`
                     : "-"}
                 </dd>
@@ -594,7 +613,7 @@ function PartReplacePageInner() {
               </div>
             </dl>
 
-            {!submitResult.nextDueDate && (
+            {!submitResult.nextDueDate && effectiveDays != null && (
               <p className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                 กำหนดเปลี่ยนรอบถัดไปยังไม่ถูกคำนวณ — กรุณาแจ้งผู้ดูแลระบบ
               </p>
@@ -646,20 +665,20 @@ function PartReplacePageInner() {
             <dl className="mt-3 space-y-1.5 text-sm">
               <div className="flex justify-between gap-4">
                 <dt className="text-primary/60">สต๊อกคงเหลือ (ก้อนรวม)</dt>
-                <dd className="text-right text-primary">{part.stock_qty} ชิ้น</dd>
+                <dd className="text-right text-primary">{part.stock_tracking_enabled ? `${part.stock_qty} ชิ้น` : "ไม่สต๊อก"}</dd>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-primary/60">
                   กำหนดเปลี่ยนครั้งถัดไปของเครื่องนี้ (ปัจจุบัน)
                 </dt>
                 <dd className="text-right">
-                  <DueDateBadge nextDueDate={link.next_due_date} />
+                  <DueDateBadge nextDueDate={link.next_due_date} hasSchedule={effectiveDays != null} />
                 </dd>
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-primary/60">อายุใช้งานที่ใช้จริง</dt>
                 <dd className="text-right text-primary">
-                  {effectiveDays} วัน
+                  {effectiveDays != null ? `${effectiveDays} วัน` : "ไม่กำหนดรอบเปลี่ยน"}
                   {isOverride && (
                     <span className="ml-1 text-xs text-primary/50">
                       (เฉพาะเครื่อง)
@@ -721,7 +740,7 @@ function PartReplacePageInner() {
               {qtyUsedError && (
                 <p className="mt-1 text-sm text-red-700">{qtyUsedError}</p>
               )}
-              {Number.isFinite(qtyUsedNum) && qtyUsedNum > part.stock_qty && (
+              {part.stock_tracking_enabled && Number.isFinite(qtyUsedNum) && qtyUsedNum > part.stock_qty && (
                 <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                   จำนวนที่ใช้มากกว่าสต๊อกคงเหลือ — สต๊อกจะติดลบ กรุณาปรับสต๊อกภายหลัง
                 </p>

@@ -9,6 +9,7 @@ import {
   MACHINE_STATUS_COLORS,
   MACHINE_STATUS_LABELS,
   MACHINE_STATUS_ORDER,
+  ONGOING_BREAKDOWN_FILTER,
   type MachineStatus,
 } from "@/lib/machineStatus";
 import ScheduleStrip from "@/components/home/ScheduleStrip";
@@ -95,7 +96,7 @@ async function fetchDashboardData(): Promise<FetchResult> {
       supabase
         .from("breakdowns")
         .select("machine_id, operating_impact")
-        .in("status", ["open", "in_progress"]),
+        .or(ONGOING_BREAKDOWN_FILTER),
       supabase
         .from("pm_plans")
         .select("id, pm_name, machine_id, next_due_date")
