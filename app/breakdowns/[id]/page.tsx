@@ -5,6 +5,12 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import {
+  toDateTimeLocal,
+  fromDateTimeLocal,
+  computeDowntimePreview,
+  validateClosedAtLocal,
+} from "@/lib/breakdownClosure";
 import PartsUsedEditor, {
   type LinkedPart,
   type PartLine,
@@ -171,24 +177,6 @@ function formatMoneyThai(value: number | string): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })} บาท`;
-}
-
-function toDateTimeLocal(iso: string | null): string {
-  if (!iso) return "";
-  const date = new Date(iso);
-  const offsetMs = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
-}
-
-function fromDateTimeLocal(value: string): string {
-  return new Date(value).toISOString();
-}
-
-function computeDowntimePreview(reportedAtIso: string, closedAtIso: string): number | null {
-  const minutes = Math.floor(
-    (new Date(closedAtIso).getTime() - new Date(reportedAtIso).getTime()) / 60_000
-  );
-  return minutes >= 0 ? minutes : null;
 }
 
 function coerceNumber(value: number | string): number {
@@ -483,6 +471,15 @@ export default function BreakdownDetailPage() {
 
   const [reopenNotice, setReopenNotice] = useState<string | null>(null);
 
+  const closeDateError = state.status === "loaded"
+    ? validateClosedAtLocal(closedAtLocal, state.breakdown.reported_at)
+    : null;
+  const closeDowntimePreview = state.status === "loaded" &&
+    !showNoRepairForm && downtimeMinutes === "" && operatingImpact === "stopped" &&
+    !closeDateError && closedAtLocal
+    ? computeDowntimePreview(state.breakdown.reported_at, fromDateTimeLocal(closedAtLocal))
+    : null;
+
   useEffect(() => {
     let cancelled = false;
 
@@ -544,7 +541,9 @@ export default function BreakdownDetailPage() {
       );
       setCloseTechnician(breakdown.technician ?? "");
       setOperatingImpact(breakdown.operating_impact);
-      setClosedAtLocal(toDateTimeLocal(breakdown.closed_at));
+      setClosedAtLocal(toDateTimeLocal(
+        breakdown.status === "in_progress" ? new Date().toISOString() : breakdown.closed_at
+      ));
       setPartLines(existingParts.lines);
       setOriginalPartLines(existingParts.lines);
 
@@ -591,6 +590,7 @@ export default function BreakdownDetailPage() {
       linkedParts: state.linkedParts,
     });
     setDowntimeMinutes("");
+    setClosedAtLocal(toDateTimeLocal(new Date().toISOString()));
     setCloseTechnician(updated.technician ?? "");
     setAcceptingJob(false);
     setAcceptTechnician("");
@@ -602,6 +602,11 @@ export default function BreakdownDetailPage() {
 
     const trimmedCause = cause.trim();
     const trimmedActionTaken = actionTaken.trim();
+
+    const closedAtError = validateClosedAtLocal(closedAtLocal, state.breakdown.reported_at);
+    // Validate again at submission, including the non-submit "ไม่ซ่อม" path.
+    if (closedAtError) return;
+    const selectedClosedAtIso = fromDateTimeLocal(closedAtLocal);
 
     let hasError = false;
     if (!isOperatingImpact(operatingImpact)) {
@@ -663,12 +668,11 @@ export default function BreakdownDetailPage() {
 
     const trimmedCloseTechnician = closeTechnician.trim();
 
-    const closedAtIso = new Date().toISOString();
     const { data, error } = await supabase
       .from("breakdowns")
       .update({
         status: "closed",
-        closed_at: closedAtIso,
+        closed_at: selectedClosedAtIso,
         cause: trimmedCause,
         action_taken: trimmedActionTaken || null,
         downtime_minutes: downtimeValue,
@@ -692,8 +696,8 @@ export default function BreakdownDetailPage() {
 
     const updated = normalizeBreakdown(data as unknown as RawBreakdownDetail);
 
-    // Insert-shape only ever holds part_id, machine_id, replaced_at (today
-    // -- the date of THIS close/re-close action), replaced_by, reason,
+    // Insert-shape only ever holds part_id, machine_id, replaced_at (the
+    // selected actual close date for new rows), replaced_by, reason,
     // qty_used, unit_cost, breakdown_id, notes. total_cost is a GENERATED
     // STORED column; never send it. Same shape app/parts/replace/page.tsx
     // (MMS-016) and MMS-022 Fix #3 already use.
@@ -727,7 +731,7 @@ export default function BreakdownDetailPage() {
       const rows = linesToInsert.map((line) => ({
         part_id: line.partId,
         machine_id: updated.machine_id,
-        replaced_at: line.replacedAt ?? toDateTimeLocal(closedAtIso).slice(0, 10),
+        replaced_at: line.replacedAt ?? closedAtLocal.slice(0, 10),
         replaced_by: trimmedCloseTechnician === "" ? null : trimmedCloseTechnician,
         reason: "breakdown",
         qty_used: Math.trunc(Number(line.qtyUsed)),
@@ -1364,6 +1368,36 @@ export default function BreakdownDetailPage() {
                 )}
               </div>
 
+              <div className="min-w-0">
+                <label htmlFor="closed_at" className="block text-sm font-medium">
+                  วันเวลาปิดงานจริง*
+                </label>
+                <input
+                  id="closed_at"
+                  type="datetime-local"
+                  required
+                  value={closedAtLocal}
+                  onChange={(event) => setClosedAtLocal(event.target.value)}
+                  aria-invalid={Boolean(closeDateError)}
+                  aria-describedby="closed_at_help closed_at_error"
+                  className={`${inputClassName} min-w-0 max-w-full`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setClosedAtLocal(toDateTimeLocal(new Date().toISOString()))}
+                  disabled={closing}
+                  className="mt-1 min-h-[44px] rounded-md px-2 text-sm font-medium text-accent disabled:opacity-70"
+                >
+                  ใช้เวลาปัจจุบัน
+                </button>
+                <p id="closed_at_help" className="text-xs leading-5 text-primary/60">
+                  เลือกวันที่และเวลาที่งานเสร็จจริง สามารถระบุย้อนหลังได้
+                </p>
+                <p id="closed_at_error" role="alert" className="mt-1 text-sm text-red-700">
+                  {closeDateError}
+                </p>
+              </div>
+
               <div>
                 <label
                   htmlFor="downtime_minutes"
@@ -1384,7 +1418,12 @@ export default function BreakdownDetailPage() {
                   }
                   className={inputClassName}
                 />
-                <p className="mt-1 text-xs leading-5 text-primary/60">หากเลือก &quot;เครื่องหยุด / ใช้งานไม่ได้&quot; และเว้นว่าง ระบบจะคำนวณจากเวลาแจ้งถึงเวลาปิดงานให้อัตโนมัติ หากกรอกเอง ระบบจะใช้ค่าที่กรอก</p>
+                <p className="mt-1 text-xs leading-5 text-primary/60">เมื่อปิดงานแบบแก้ไขเรียบร้อย หากเลือก &quot;เครื่องหยุด / ใช้งานไม่ได้&quot; และเว้นว่าง ระบบจะคำนวณจากเวลาแจ้งถึงเวลาปิดงานให้อัตโนมัติ หากกรอกเอง ระบบจะใช้ค่าที่กรอก</p>
+                {closeDowntimePreview !== null && (
+                  <p role="status" className="mt-1 text-sm font-medium text-accent">
+                    คำนวณอัตโนมัติ: {closeDowntimePreview.toLocaleString("en-US")} นาที ({formatDowntimeThai(closeDowntimePreview)})
+                  </p>
+                )}
                 {downtimeError && (
                   <p className="mt-1 text-sm text-red-700">{downtimeError}</p>
                 )}
@@ -1468,7 +1507,7 @@ export default function BreakdownDetailPage() {
                     <button
                       type="button"
                       onClick={handleNotRepairedSubmit}
-                      disabled={closing || savingProgress}
+                      disabled={closing || savingProgress || Boolean(closeDateError)}
                       className="min-h-[48px] rounded-md bg-amber-700 px-3 text-sm font-medium text-white disabled:opacity-70"
                     >
                       {closing ? "กำลังบันทึก..." : "ยืนยันไม่ซ่อม"}
@@ -1501,7 +1540,7 @@ export default function BreakdownDetailPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={closing || savingProgress}
+                  disabled={closing || savingProgress || Boolean(closeDateError)}
                   className="flex min-h-[48px] w-full items-center justify-center rounded-md bg-accent px-6 text-base font-medium text-white disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   {closing ? "กำลังบันทึก..." : "แก้ไขเรียบร้อย"}
