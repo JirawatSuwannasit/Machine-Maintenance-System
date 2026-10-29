@@ -201,6 +201,7 @@ type SparePartRelation = {
   part_name: string;
   unit_cost: number | string;
   stock_qty: number;
+  stock_tracking_enabled: boolean;
 };
 
 // Same defensive pattern as the machine relation above: a to-one FK
@@ -225,7 +226,7 @@ function normalizeSparePartRelation(
 async function fetchLinkedParts(machineId: string): Promise<LinkedPart[]> {
   const { data, error } = await supabase
     .from("machine_parts")
-    .select("part_id, spare_parts(part_code, part_name, unit_cost, stock_qty)")
+    .select("part_id, spare_parts(part_code, part_name, unit_cost, stock_qty, stock_tracking_enabled)")
     .eq("machine_id", machineId);
 
   if (error || !data) return [];
@@ -240,6 +241,7 @@ async function fetchLinkedParts(machineId: string): Promise<LinkedPart[]> {
       part_name: part.part_name,
       unit_cost: coerceNumber(part.unit_cost),
       stock_qty: part.stock_qty,
+      stock_tracking_enabled: part.stock_tracking_enabled,
     });
   }
   return result;
@@ -285,7 +287,7 @@ async function fetchExistingPartLines(
   const { data, error } = await supabase
     .from("part_replacements")
     .select(
-      "id, part_id, qty_used, unit_cost, replaced_at, spare_parts(part_code, part_name, unit_cost, stock_qty)"
+      "id, part_id, qty_used, unit_cost, replaced_at, spare_parts(part_code, part_name, unit_cost, stock_qty, stock_tracking_enabled)"
     )
     .eq("breakdown_id", breakdownId)
     .order("created_at", { ascending: true });
@@ -316,6 +318,7 @@ async function fetchExistingPartLines(
           part_name: part.part_name,
           unit_cost: coerceNumber(part.unit_cost),
           stock_qty: part.stock_qty,
+          stock_tracking_enabled: part.stock_tracking_enabled,
         });
       }
     }

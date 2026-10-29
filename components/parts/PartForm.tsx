@@ -9,10 +9,11 @@ export type SparePartRecord = {
   id: string;
   part_code: string;
   part_name: string;
-  default_lifespan_days: number;
+  default_lifespan_days: number | null;
   unit_cost: number | string;
   stock_qty: number;
   min_stock: number;
+  stock_tracking_enabled: boolean;
 };
 
 export type PartMachineOption = {
@@ -26,6 +27,7 @@ export type ExistingMachinePartLink = {
   id: string;
   machine_id: string;
   lifespan_override_days: number | null;
+  schedule_disabled: boolean;
   last_replaced_at: string | null;
   machine_code: string;
   machine_name: string;
@@ -44,6 +46,7 @@ type SelectedMachineEntry = {
   machineCode: string;
   machineName: string;
   overrideDaysInput: string;
+  scheduleMode: "default" | "custom" | "none";
   hasReplacementHistory: boolean;
 };
 
@@ -67,6 +70,11 @@ function buildInitialSelection(
         link.lifespan_override_days != null
           ? String(link.lifespan_override_days)
           : "",
+      scheduleMode: link.schedule_disabled
+        ? "none"
+        : link.lifespan_override_days != null
+          ? "custom"
+          : "default",
       hasReplacementHistory: link.last_replaced_at !== null,
     }));
   }
@@ -79,6 +87,7 @@ function buildInitialSelection(
           machineCode: match.machine_code,
           machineName: match.machine_name,
           overrideDaysInput: "",
+          scheduleMode: "default",
           hasReplacementHistory: false,
         },
       ];
@@ -100,7 +109,13 @@ export default function PartForm({
   const [partCode, setPartCode] = useState(part?.part_code ?? "");
   const [partName, setPartName] = useState(part?.part_name ?? "");
   const [defaultLifespanDays, setDefaultLifespanDays] = useState(
-    part ? String(part.default_lifespan_days) : ""
+    part?.default_lifespan_days != null ? String(part.default_lifespan_days) : ""
+  );
+  const [noDefaultSchedule, setNoDefaultSchedule] = useState(
+    part ? part.default_lifespan_days == null : false
+  );
+  const [stockTrackingEnabled, setStockTrackingEnabled] = useState(
+    part?.stock_tracking_enabled ?? true
   );
   const [unitCost, setUnitCost] = useState<number | "">(
     part
@@ -155,6 +170,7 @@ export default function PartForm({
         machineCode: machine.machine_code,
         machineName: machine.machine_name,
         overrideDaysInput: "",
+        scheduleMode: "default",
         hasReplacementHistory: false,
       },
     ]);
@@ -175,6 +191,17 @@ export default function PartForm({
   function handleOverrideChange(machineId: string, value: string) {
     setSelectedMachines((prev) =>
       prev.map((e) => (e.machineId === machineId ? { ...e, overrideDaysInput: value } : e))
+    );
+  }
+
+  function handleScheduleModeChange(
+    machineId: string,
+    scheduleMode: SelectedMachineEntry["scheduleMode"]
+  ) {
+    setSelectedMachines((prev) =>
+      prev.map((entry) =>
+        entry.machineId === machineId ? { ...entry, scheduleMode } : entry
+      )
     );
   }
 
@@ -202,11 +229,11 @@ export default function PartForm({
     } else {
       setPartNameError(null);
     }
-    if (
+    if (!noDefaultSchedule && (
       defaultLifespanDays.trim() === "" ||
       !Number.isFinite(parsedLifespan) ||
       parsedLifespan < 1
-    ) {
+    )) {
       setLifespanError("อายุการใช้งานมาตรฐานต้องมากกว่า 0 วัน");
       hasError = true;
     } else {
@@ -218,13 +245,13 @@ export default function PartForm({
     } else {
       setCostError(null);
     }
-    if (!Number.isFinite(stockValue) || stockValue < 0) {
+    if (stockTrackingEnabled && (!Number.isFinite(stockValue) || stockValue < 0)) {
       setStockError("จำนวนคงเหลือต้องไม่ติดลบ");
       hasError = true;
     } else {
       setStockError(null);
     }
-    if (!Number.isFinite(minStockValue) || minStockValue < 0) {
+    if (stockTrackingEnabled && (!Number.isFinite(minStockValue) || minStockValue < 0)) {
       setMinStockError("จุดสั่งซื้อต้องไม่ติดลบ");
       hasError = true;
     } else {
@@ -233,7 +260,7 @@ export default function PartForm({
 
     const newOverrideErrors: Record<string, string> = {};
     for (const entry of selectedMachines) {
-      if (entry.overrideDaysInput.trim() === "") continue;
+      if (entry.scheduleMode !== "custom") continue;
       const parsedOverride = Number(entry.overrideDaysInput);
       if (!Number.isFinite(parsedOverride) || parsedOverride < 1) {
         newOverrideErrors[entry.machineId] = "ต้องเป็นตัวเลขมากกว่า 0";
@@ -244,16 +271,26 @@ export default function PartForm({
 
     if (hasError) return;
 
+    if (
+      part &&
+      !part.stock_tracking_enabled &&
+      stockTrackingEnabled &&
+      !window.confirm(
+        "ยืนยันเปิดติดตามสต๊อก? กรุณาตรวจสอบจำนวนคงเหลือที่กรอกให้ตรงกับสต๊อกจริง ระบบจะไม่คำนวณย้อนหลังจากประวัติการเปลี่ยน"
+      )
+    ) return;
+
     setSubmitting(true);
     setFormError(null);
 
     const partPayload = {
       part_code: trimmedCode,
       part_name: trimmedName,
-      default_lifespan_days: Math.trunc(parsedLifespan),
+      default_lifespan_days: noDefaultSchedule ? null : Math.trunc(parsedLifespan),
       unit_cost: costValue,
       stock_qty: Math.trunc(stockValue),
       min_stock: Math.trunc(minStockValue),
+      stock_tracking_enabled: stockTrackingEnabled,
     };
 
     let partId: string;
@@ -315,12 +352,17 @@ export default function PartForm({
       .map((entry) => {
         const existing = existingByMachineId.get(entry.machineId)!;
         const newOverride =
-          entry.overrideDaysInput.trim() === ""
+          entry.scheduleMode !== "custom"
             ? null
             : Math.trunc(Number(entry.overrideDaysInput));
-        return { existing, newOverride };
+        const scheduleDisabled = entry.scheduleMode === "none";
+        return { existing, newOverride, scheduleDisabled };
       })
-      .filter(({ existing, newOverride }) => existing.lifespan_override_days !== newOverride);
+      .filter(
+        ({ existing, newOverride, scheduleDisabled }) =>
+          existing.lifespan_override_days !== newOverride ||
+          existing.schedule_disabled !== scheduleDisabled
+      );
 
     if (toDelete.length > 0) {
       const { error } = await supabase
@@ -339,9 +381,10 @@ export default function PartForm({
         machine_id: entry.machineId,
         part_id: partId,
         lifespan_override_days:
-          entry.overrideDaysInput.trim() === ""
+          entry.scheduleMode !== "custom"
             ? null
             : Math.trunc(Number(entry.overrideDaysInput)),
+        schedule_disabled: entry.scheduleMode === "none",
       }));
       const { error } = await supabase.from("machine_parts").insert(payload);
       if (error) {
@@ -351,10 +394,13 @@ export default function PartForm({
       }
     }
 
-    for (const { existing, newOverride } of toUpdate) {
+    for (const { existing, newOverride, scheduleDisabled } of toUpdate) {
       const { error } = await supabase
         .from("machine_parts")
-        .update({ lifespan_override_days: newOverride })
+        .update({
+          lifespan_override_days: newOverride,
+          schedule_disabled: scheduleDisabled,
+        })
         .eq("id", existing.id);
       if (error) {
         setFormError(error.message);
@@ -372,124 +418,59 @@ export default function PartForm({
         <h2 className={sectionHeadingClassName}>ข้อมูลอะไหล่</h2>
 
         <div>
-          <label htmlFor="part_code" className="block text-sm font-medium">
-            รหัสอะไหล่*
-          </label>
-          <input
-            id="part_code"
-            type="text"
-            value={partCode}
-            onChange={(event) => setPartCode(event.target.value)}
-            className={inputClassName}
-          />
-          {partCodeError && (
-            <p className="mt-1 text-sm text-red-700">{partCodeError}</p>
-          )}
+          <label htmlFor="part_code" className="block text-sm font-medium">รหัสอะไหล่*</label>
+          <input id="part_code" type="text" value={partCode} onChange={(event) => setPartCode(event.target.value)} className={inputClassName} />
+          {partCodeError && <p className="mt-1 text-sm text-red-700">{partCodeError}</p>}
         </div>
 
         <div>
-          <label htmlFor="part_name" className="block text-sm font-medium">
-            ชื่ออะไหล่*
-          </label>
-          <input
-            id="part_name"
-            type="text"
-            value={partName}
-            onChange={(event) => setPartName(event.target.value)}
-            className={inputClassName}
-          />
-          {partNameError && (
-            <p className="mt-1 text-sm text-red-700">{partNameError}</p>
-          )}
+          <label htmlFor="part_name" className="block text-sm font-medium">ชื่ออะไหล่*</label>
+          <input id="part_name" type="text" value={partName} onChange={(event) => setPartName(event.target.value)} className={inputClassName} />
+          {partNameError && <p className="mt-1 text-sm text-red-700">{partNameError}</p>}
         </div>
 
-        <div>
-          <label
-            htmlFor="default_lifespan_days"
-            className="block text-sm font-medium"
-          >
-            อายุการใช้งานมาตรฐาน (วัน)*
-          </label>
-          <input
-            id="default_lifespan_days"
-            type="number"
-            min="1"
-            value={defaultLifespanDays}
-            onChange={(event) => setDefaultLifespanDays(event.target.value)}
-            className={inputClassName}
-          />
-          <p className="mt-1 text-xs text-primary/50">
-            ใช้เมื่อไม่ได้ตั้งอายุเฉพาะเครื่อง
-          </p>
-          {lifespanError && (
-            <p className="mt-1 text-sm text-red-700">{lifespanError}</p>
-          )}
-        </div>
+        <label className="flex min-h-[44px] items-center gap-3 rounded-md border border-primary/10 bg-surface px-3 py-2 text-sm text-primary">
+          <input type="checkbox" checked={noDefaultSchedule} onChange={(event) => { setNoDefaultSchedule(event.target.checked); setLifespanError(null); }} className="h-5 w-5 rounded border-primary/30 text-accent focus:ring-accent" />
+          <span><span className="block font-medium">ไม่กำหนดอายุการใช้งาน</span><span className="block text-xs text-primary/60">ไม่สร้างกำหนดเปลี่ยนอัตโนมัติ เว้นแต่ตั้งรอบเฉพาะเครื่อง</span></span>
+        </label>
+
+        {!noDefaultSchedule && (
+          <div>
+            <label htmlFor="default_lifespan_days" className="block text-sm font-medium">อายุการใช้งานมาตรฐาน (วัน)*</label>
+            <input id="default_lifespan_days" type="number" min="1" value={defaultLifespanDays} onChange={(event) => setDefaultLifespanDays(event.target.value)} className={inputClassName} />
+            <p className="mt-1 text-xs text-primary/50">ใช้เมื่อไม่ได้ตั้งอายุเฉพาะเครื่อง</p>
+            {lifespanError && <p className="mt-1 text-sm text-red-700">{lifespanError}</p>}
+          </div>
+        )}
 
         <div>
-          <label htmlFor="unit_cost" className="block text-sm font-medium">
-            ราคาต่อหน่วย (บาท)
-          </label>
-          <input
-            id="unit_cost"
-            type="number"
-            min="0"
-            step="0.01"
-            value={unitCost}
-            onChange={(event) =>
-              setUnitCost(event.target.value === "" ? "" : Number(event.target.value))
-            }
-            className={inputClassName}
-          />
-          <p className="mt-1 text-xs text-primary/50">
-            ราคามาตรฐาน ใช้เติมอัตโนมัติตอนบันทึกการเปลี่ยน (แก้ราคาจริงได้ตอนเปลี่ยน)
-          </p>
+          <label htmlFor="unit_cost" className="block text-sm font-medium">ราคาต่อหน่วย (บาท)</label>
+          <input id="unit_cost" type="number" min="0" step="0.01" value={unitCost} onChange={(event) => setUnitCost(event.target.value === "" ? "" : Number(event.target.value))} className={inputClassName} />
+          <p className="mt-1 text-xs text-primary/50">ราคามาตรฐาน ใช้เติมอัตโนมัติตอนบันทึกการเปลี่ยน (แก้ราคาจริงได้ตอนเปลี่ยน)</p>
           {costError && <p className="mt-1 text-sm text-red-700">{costError}</p>}
         </div>
 
-        <div>
-          <label htmlFor="stock_qty" className="block text-sm font-medium">
-            จำนวนคงเหลือ
-          </label>
-          <input
-            id="stock_qty"
-            type="number"
-            min="0"
-            step="1"
-            value={stockQty}
-            onChange={(event) =>
-              setStockQty(event.target.value === "" ? "" : Number(event.target.value))
-            }
-            className={inputClassName}
-          />
-          <p className="mt-1 text-xs text-primary/50">
-            สต๊อกก้อนรวม ใช้ร่วมกันทุกเครื่อง
-          </p>
-          {stockError && <p className="mt-1 text-sm text-red-700">{stockError}</p>}
-        </div>
+        <label className="flex min-h-[44px] items-center gap-3 rounded-md border border-primary/10 bg-surface px-3 py-2 text-sm text-primary">
+          <input type="checkbox" checked={!stockTrackingEnabled} onChange={(event) => { setStockTrackingEnabled(!event.target.checked); setStockError(null); setMinStockError(null); }} className="h-5 w-5 rounded border-primary/30 text-accent focus:ring-accent" />
+          <span><span className="block font-medium">ไม่สต๊อก</span><span className="block text-xs text-primary/60">บันทึกจำนวนและต้นทุนที่ใช้ แต่ไม่ตัดหรือคืนสต๊อก</span></span>
+        </label>
 
-        <div>
-          <label htmlFor="min_stock" className="block text-sm font-medium">
-            จุดสั่งซื้อ
-          </label>
-          <input
-            id="min_stock"
-            type="number"
-            min="0"
-            step="1"
-            value={minStock}
-            onChange={(event) =>
-              setMinStock(event.target.value === "" ? "" : Number(event.target.value))
-            }
-            className={inputClassName}
-          />
-          <p className="mt-1 text-xs text-primary/50">
-            แจ้งเตือนเมื่อสต๊อกต่ำกว่าค่านี้
-          </p>
-          {minStockError && (
-            <p className="mt-1 text-sm text-red-700">{minStockError}</p>
-          )}
-        </div>
+        {stockTrackingEnabled && (
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="stock_qty" className="block text-sm font-medium">จำนวนคงเหลือ</label>
+              <input id="stock_qty" type="number" min="0" step="1" value={stockQty} onChange={(event) => setStockQty(event.target.value === "" ? "" : Number(event.target.value))} className={inputClassName} />
+              <p className="mt-1 text-xs text-primary/50">สต๊อกก้อนรวม ใช้ร่วมกันทุกเครื่อง</p>
+              {stockError && <p className="mt-1 text-sm text-red-700">{stockError}</p>}
+            </div>
+            <div>
+              <label htmlFor="min_stock" className="block text-sm font-medium">จุดสั่งซื้อ</label>
+              <input id="min_stock" type="number" min="0" step="1" value={minStock} onChange={(event) => setMinStock(event.target.value === "" ? "" : Number(event.target.value))} className={inputClassName} />
+              <p className="mt-1 text-xs text-primary/50">แจ้งเตือนเมื่อสต๊อกต่ำกว่าค่านี้</p>
+              {minStockError && <p className="mt-1 text-sm text-red-700">{minStockError}</p>}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="space-y-4">
@@ -559,31 +540,42 @@ export default function PartForm({
                     <Trash2 size={16} aria-hidden="true" />
                   </button>
                 </div>
-                <div className="mt-2">
+                <div className="mt-2 space-y-2">
                   <label
-                    htmlFor={`override_${entry.machineId}`}
+                    htmlFor={`schedule_mode_${entry.machineId}`}
                     className="block text-xs font-medium text-primary/60"
                   >
-                    อายุใช้งานเฉพาะเครื่องนี้ (วัน)
+                    รอบเปลี่ยนของเครื่องนี้
                   </label>
-                  <input
-                    id={`override_${entry.machineId}`}
+                  <select
+                    id={`schedule_mode_${entry.machineId}`}
+                    value={entry.scheduleMode}
+                    onChange={(event) => handleScheduleModeChange(
+                      entry.machineId,
+                      event.target.value as SelectedMachineEntry["scheduleMode"]
+                    )}
+                    className="mt-1 block w-full min-h-[44px] rounded-md border border-primary/20 bg-white px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                  >
+                    <option value="default">ใช้ค่ามาตรฐาน</option>
+                    <option value="custom">กำหนดเอง</option>
+                    <option value="none">ไม่กำหนดรอบเปลี่ยน</option>
+                  </select>
+                  {entry.scheduleMode === "custom" && <input
                     type="number"
                     min="1"
+                    aria-label={`อายุใช้งานเฉพาะ ${entry.machineCode}`}
                     value={entry.overrideDaysInput}
-                    onChange={(event) =>
-                      handleOverrideChange(entry.machineId, event.target.value)
-                    }
+                    onChange={(event) => handleOverrideChange(entry.machineId, event.target.value)}
                     className="mt-1 block w-full min-h-[44px] rounded-md border border-primary/20 bg-white px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-                  />
+                  />}
                   <p className="mt-1 text-xs text-primary/50">
-                    {entry.overrideDaysInput.trim() === ""
-                      ? `ค่าเริ่มต้น: ${
-                          defaultLifespanDays.trim() !== "" ? defaultLifespanDays : "-"
-                        } วัน`
-                      : `แทนที่ค่าเริ่มต้น (${
-                          defaultLifespanDays.trim() !== "" ? defaultLifespanDays : "-"
-                        } วัน)`}
+                    {entry.scheduleMode === "none"
+                      ? "เครื่องนี้จะไม่มีกำหนดเปลี่ยน"
+                      : entry.scheduleMode === "custom"
+                        ? "ใช้จำนวนวันเฉพาะเครื่องนี้"
+                        : noDefaultSchedule
+                          ? "ค่ามาตรฐานไม่กำหนดรอบเปลี่ยน"
+                          : `ค่ามาตรฐาน: ${defaultLifespanDays || "-"} วัน`}
                   </p>
                   {overrideErrors[entry.machineId] && (
                     <p className="mt-1 text-sm text-red-700">

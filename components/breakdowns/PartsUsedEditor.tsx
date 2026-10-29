@@ -9,6 +9,7 @@ export type LinkedPart = {
   part_name: string;
   unit_cost: number;
   stock_qty: number;
+  stock_tracking_enabled: boolean;
 };
 
 export type PartLine = {
@@ -124,7 +125,9 @@ export default function PartsUsedEditor({
                 const costNum = line.unitCost === "" ? 0 : line.unitCost;
                 const lineTotal = qtyNum * costNum;
                 const isOverStock =
-                  selectedPart != null && qtyNum > selectedPart.stock_qty;
+                  selectedPart != null &&
+                  selectedPart.stock_tracking_enabled &&
+                  qtyNum > selectedPart.stock_qty;
 
                 // A part chosen on another line is not selectable again --
                 // one line per part; a second unit of the same part is

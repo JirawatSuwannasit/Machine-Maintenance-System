@@ -16,15 +16,17 @@ type SparePartRelation = {
   id: string;
   part_code: string;
   part_name: string;
-  default_lifespan_days: number;
+  default_lifespan_days: number | null;
   stock_qty: number;
   min_stock: number;
+  stock_tracking_enabled: boolean;
 };
 
 type PartLinkRow = {
   id: string;
   part_id: string;
   lifespan_override_days: number | null;
+  schedule_disabled: boolean;
   last_replaced_at: string | null;
   next_due_date: string | null;
   spare_parts: SparePartRelation | null;
@@ -48,7 +50,7 @@ function normalizeSparePartRelation(
 }
 
 const LINKS_SELECT =
-  "id, part_id, lifespan_override_days, last_replaced_at, next_due_date, spare_parts(id, part_code, part_name, default_lifespan_days, stock_qty, min_stock)";
+  "id, part_id, lifespan_override_days, schedule_disabled, last_replaced_at, next_due_date, spare_parts(id, part_code, part_name, default_lifespan_days, stock_qty, min_stock, stock_tracking_enabled)";
 
 type ReplacementRow = {
   id: string;
@@ -78,7 +80,10 @@ function formatMoneyThai(value: number | string): string {
 // (MMS-014) for every non-null case. Only the NULL case gets a
 // replacement-specific label ("ยังไม่เคยเปลี่ยน"), matching the convention
 // already established in app/parts/[id]/page.tsx (MMS-015).
-function DueDateBadge({ nextDueDate }: { nextDueDate: string | null }) {
+function DueDateBadge({ nextDueDate, hasSchedule }: { nextDueDate: string | null; hasSchedule: boolean }) {
+  if (!hasSchedule) {
+    return <span className="inline-flex w-fit rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">ไม่กำหนดรอบเปลี่ยน</span>;
+  }
   if (!nextDueDate) {
     return (
       <span className="inline-flex w-fit items-center whitespace-nowrap rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
@@ -286,6 +291,7 @@ export default function PartsTab({ machineId, isAdmin, canWork }: PartsTabProps)
       machine_id: machineId,
       part_id: option.id,
       lifespan_override_days: null,
+      schedule_disabled: false,
     });
 
     if (error) {
@@ -403,9 +409,11 @@ export default function PartsTab({ machineId, isAdmin, canWork }: PartsTabProps)
         <div className="mt-4 space-y-3">
           {sortedLinks.map((link) => {
             const part = link.spare_parts;
-            const effectiveDays = link.lifespan_override_days ?? part?.default_lifespan_days ?? 0;
+            const effectiveDays = link.schedule_disabled
+              ? null
+              : link.lifespan_override_days ?? part?.default_lifespan_days ?? null;
             const isOverride = link.lifespan_override_days != null;
-            const isLowStock = (part?.stock_qty ?? 0) < (part?.min_stock ?? 0);
+            const isLowStock = Boolean(part?.stock_tracking_enabled) && (part?.stock_qty ?? 0) < (part?.min_stock ?? 0);
             const isExpanded = expandedIds.has(link.part_id);
             const history = state.historyByPart.get(link.part_id) ?? [];
 
@@ -424,14 +432,14 @@ export default function PartsTab({ machineId, isAdmin, canWork }: PartsTabProps)
                         {part?.part_name ?? "(ไม่พบข้อมูลอะไหล่)"}
                       </p>
                     </Link>
-                    <DueDateBadge nextDueDate={link.next_due_date} />
+                    <DueDateBadge nextDueDate={link.next_due_date} hasSchedule={effectiveDays != null} />
                   </div>
 
                   <dl className="mt-3 space-y-1.5 text-sm">
                     <div className="flex justify-between gap-4">
                       <dt className="text-primary/60">อายุใช้งานที่ใช้จริง</dt>
                       <dd className="text-right text-primary">
-                        {effectiveDays} วัน
+                          {effectiveDays != null ? `${effectiveDays} วัน` : "ไม่กำหนดรอบเปลี่ยน"}
                         {isOverride && (
                           <span className="ml-1 text-xs text-primary/50">
                             (เฉพาะเครื่อง)
@@ -448,8 +456,10 @@ export default function PartsTab({ machineId, isAdmin, canWork }: PartsTabProps)
                     <div className="flex items-center justify-between gap-4">
                       <dt className="text-primary/60">สต๊อกคงเหลือ</dt>
                       <dd className="flex items-center gap-2 text-right text-primary">
-                        <span>{part?.stock_qty ?? 0} ชิ้น</span>
-                        {isLowStock && <LowStockBadge />}
+                        {part?.stock_tracking_enabled ? <>
+                          <span>{part.stock_qty} ชิ้น</span>
+                          {isLowStock && <LowStockBadge />}
+                        </> : <span>ไม่สต๊อก</span>}
                       </dd>
                     </div>
                   </dl>

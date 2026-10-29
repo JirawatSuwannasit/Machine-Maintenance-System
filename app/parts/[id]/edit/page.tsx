@@ -19,6 +19,7 @@ type RawLinkRow = {
   id: string;
   machine_id: string;
   lifespan_override_days: number | null;
+  schedule_disabled: boolean;
   last_replaced_at: string | null;
   machines: MachineRelation | MachineRelation[] | null;
 };
@@ -65,14 +66,14 @@ export default function EditPartPage() {
         supabase
           .from("spare_parts")
           .select(
-            "id, part_code, part_name, default_lifespan_days, unit_cost, stock_qty, min_stock"
+            "id, part_code, part_name, default_lifespan_days, unit_cost, stock_qty, min_stock, stock_tracking_enabled"
           )
           .eq("id", params.id)
           .maybeSingle(),
         supabase
           .from("machine_parts")
           .select(
-            "id, machine_id, lifespan_override_days, last_replaced_at, machines(machine_code, machine_name)"
+            "id, machine_id, lifespan_override_days, schedule_disabled, last_replaced_at, machines(machine_code, machine_name)"
           )
           .eq("part_id", params.id),
         supabase
@@ -111,6 +112,7 @@ export default function EditPartPage() {
           id: row.id,
           machine_id: row.machine_id,
           lifespan_override_days: row.lifespan_override_days,
+          schedule_disabled: row.schedule_disabled,
           last_replaced_at: row.last_replaced_at,
           machine_code: machine?.machine_code ?? "-",
           machine_name: machine?.machine_name ?? "(ไม่พบข้อมูลเครื่องจักร)",

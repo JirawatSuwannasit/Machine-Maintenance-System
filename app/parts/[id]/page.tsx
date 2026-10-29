@@ -15,10 +15,11 @@ type SparePartDetail = {
   id: string;
   part_code: string;
   part_name: string;
-  default_lifespan_days: number;
+  default_lifespan_days: number | null;
   unit_cost: number | string;
   stock_qty: number;
   min_stock: number;
+  stock_tracking_enabled: boolean;
 };
 
 type MachineRelation = { id: string; machine_code: string; machine_name: string };
@@ -26,6 +27,7 @@ type MachineRelation = { id: string; machine_code: string; machine_name: string 
 type MachineLinkRow = {
   id: string;
   lifespan_override_days: number | null;
+  schedule_disabled: boolean;
   last_replaced_at: string | null;
   next_due_date: string | null;
   machines: MachineRelation | null;
@@ -63,7 +65,10 @@ function formatMoneyThai(value: number | string): string {
 // label here ("ยังไม่เคยเปลี่ยน" instead of the PM-flavoured
 // "รอทำครั้งแรก"), since a part that has never been replaced isn't quite
 // the same concept as a PM plan that has never been done.
-function DueDateBadge({ nextDueDate }: { nextDueDate: string | null }) {
+function DueDateBadge({ nextDueDate, hasSchedule }: { nextDueDate: string | null; hasSchedule: boolean }) {
+  if (!hasSchedule) {
+    return <span className="inline-flex w-fit rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">ไม่กำหนดรอบเปลี่ยน</span>;
+  }
   if (!nextDueDate) {
     return (
       <span className="inline-flex w-fit items-center whitespace-nowrap rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
@@ -165,14 +170,14 @@ export default function PartDetailPage() {
         supabase
           .from("spare_parts")
           .select(
-            "id, part_code, part_name, default_lifespan_days, unit_cost, stock_qty, min_stock"
+            "id, part_code, part_name, default_lifespan_days, unit_cost, stock_qty, min_stock, stock_tracking_enabled"
           )
           .eq("id", params.id)
           .maybeSingle(),
         supabase
           .from("machine_parts")
           .select(
-            "id, lifespan_override_days, last_replaced_at, next_due_date, machines(id, machine_code, machine_name)"
+            "id, lifespan_override_days, schedule_disabled, last_replaced_at, next_due_date, machines(id, machine_code, machine_name)"
           )
           .eq("part_id", params.id),
         supabase
@@ -297,7 +302,9 @@ export default function PartDetailPage() {
               <div className="flex justify-between gap-4">
                 <dt className="text-primary/60">อายุใช้งานมาตรฐาน</dt>
                 <dd className="text-right text-primary">
-                  {state.part.default_lifespan_days} วัน
+                  {state.part.default_lifespan_days != null
+                    ? `${state.part.default_lifespan_days} วัน`
+                    : "ไม่กำหนดรอบเปลี่ยน"}
                 </dd>
               </div>
               <div className="flex justify-between gap-4">
@@ -309,8 +316,8 @@ export default function PartDetailPage() {
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-primary/60">จำนวนคงเหลือ</dt>
                 <dd className="flex items-center gap-2 text-right text-primary">
-                  <span>{state.part.stock_qty}</span>
-                  {state.part.stock_qty < state.part.min_stock && (
+                  <span>{state.part.stock_tracking_enabled ? state.part.stock_qty : "ไม่สต๊อก"}</span>
+                  {state.part.stock_tracking_enabled && state.part.stock_qty < state.part.min_stock && (
                     <LowStockBadge />
                   )}
                 </dd>
@@ -318,7 +325,7 @@ export default function PartDetailPage() {
               <div className="flex justify-between gap-4">
                 <dt className="text-primary/60">จุดสั่งซื้อ</dt>
                 <dd className="text-right text-primary">
-                  {state.part.min_stock}
+                  {state.part.stock_tracking_enabled ? state.part.min_stock : "-"}
                 </dd>
               </div>
             </dl>
@@ -361,9 +368,9 @@ export default function PartDetailPage() {
                     </thead>
                     <tbody>
                       {state.links.map((link) => {
-                        const effectiveDays =
-                          link.lifespan_override_days ??
-                          state.part.default_lifespan_days;
+                        const effectiveDays = link.schedule_disabled
+                          ? null
+                          : link.lifespan_override_days ?? state.part.default_lifespan_days;
                         const isOverride = link.lifespan_override_days != null;
                         return (
                           <tr
@@ -385,7 +392,7 @@ export default function PartDetailPage() {
                               </Link>
                             </td>
                             <td className="whitespace-nowrap px-2 py-3 text-primary/70">
-                              {effectiveDays} วัน
+                              {effectiveDays != null ? `${effectiveDays} วัน` : "ไม่กำหนดรอบเปลี่ยน"}
                               {isOverride && (
                                 <span className="ml-1 text-xs text-primary/50">
                                   (เฉพาะเครื่อง)
@@ -398,7 +405,7 @@ export default function PartDetailPage() {
                                 : "-"}
                             </td>
                             <td className="px-2 py-3">
-                              <DueDateBadge nextDueDate={link.next_due_date} />
+                              <DueDateBadge nextDueDate={link.next_due_date} hasSchedule={effectiveDays != null} />
                             </td>
                           </tr>
                         );
@@ -410,9 +417,9 @@ export default function PartDetailPage() {
                 {/* Mobile cards */}
                 <div className="mt-4 space-y-3 md:hidden">
                   {state.links.map((link) => {
-                    const effectiveDays =
-                      link.lifespan_override_days ??
-                      state.part.default_lifespan_days;
+                    const effectiveDays = link.schedule_disabled
+                      ? null
+                      : link.lifespan_override_days ?? state.part.default_lifespan_days;
                     const isOverride = link.lifespan_override_days != null;
                     return (
                       <Link
@@ -430,11 +437,11 @@ export default function PartDetailPage() {
                                 "(ไม่พบข้อมูลเครื่องจักร)"}
                             </p>
                           </div>
-                          <DueDateBadge nextDueDate={link.next_due_date} />
+                          <DueDateBadge nextDueDate={link.next_due_date} hasSchedule={effectiveDays != null} />
                         </div>
                         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-primary/60">
                           <span>
-                            อายุใช้งาน: {effectiveDays} วัน
+                            อายุใช้งาน: {effectiveDays != null ? `${effectiveDays} วัน` : "ไม่กำหนดรอบเปลี่ยน"}
                             {isOverride && " (เฉพาะเครื่อง)"}
                           </span>
                           <span>
