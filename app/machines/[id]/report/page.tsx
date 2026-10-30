@@ -4,6 +4,9 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { flushSync } from "react-dom";
+import { fetchPartsReplacementTimeline } from "@/lib/fetchPartsReplacementTimeline";
+import PartsReplacementTimelinePrint from "@/components/machine/PartsReplacementTimelinePrint";
 import {
   OPERATING_IMPACT_LABELS,
   type OperatingImpact,
@@ -460,6 +463,43 @@ export default function MachineReportPage() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [rangeFrom, setRangeFrom] = useState(() => monthsAgoIsoDate(12));
   const [rangeTo, setRangeTo] = useState(() => todayIsoDate());
+  const [loadedReportKey, setLoadedReportKey] = useState<string | null>(null);
+  const [timeline, setTimeline] = useState<
+    | { status: "loading" }
+    | { status: "error" }
+    | { status: "loaded"; machineId: string; data: Awaited<ReturnType<typeof fetchPartsReplacementTimeline>> }
+  >({ status: "loading" });
+  const [timelineRetry, setTimelineRetry] = useState(0);
+  const [timelineOverflow, setTimelineOverflow] = useState(false);
+  const [generatedAt, setGeneratedAt] = useState(() => new Date());
+  const printReady = state.status === "loaded" &&
+    loadedReportKey === `${params.id}|${rangeFrom}|${rangeTo}` &&
+    timeline.status === "loaded" && timeline.machineId === params.id;
+
+  useEffect(() => {
+    if (!UUID_REGEX.test(params.id)) return;
+    const controller = new AbortController();
+    setTimeline({ status: "loading" });
+    setTimelineOverflow(false);
+    // Independent from report dates and interactive part/year selections.
+    fetchPartsReplacementTimeline(params.id, controller.signal)
+      .then((data) => { if (!controller.signal.aborted) setTimeline({ status: "loaded", machineId: params.id, data }); })
+      .catch(() => { if (!controller.signal.aborted) setTimeline({ status: "error" }); });
+    return () => controller.abort();
+  }, [params.id, timelineRetry]);
+
+  useEffect(() => {
+    const preparePrint = () => flushSync(() => setGeneratedAt(new Date()));
+    window.addEventListener("beforeprint", preparePrint);
+    return () => window.removeEventListener("beforeprint", preparePrint);
+  }, []);
+
+  function handlePrint() {
+    if (!printReady) return;
+    flushSync(() => setGeneratedAt(new Date()));
+    window.print();
+  }
+
 
   useEffect(() => {
     let cancelled = false;
@@ -470,7 +510,10 @@ export default function MachineReportPage() {
         return;
       }
       const result = await loadReport(params.id, rangeFrom, rangeTo);
-      if (!cancelled) setState(result);
+      if (!cancelled) {
+        setState(result);
+        setLoadedReportKey(`${params.id}|${rangeFrom}|${rangeTo}`);
+      }
     }
 
     load();
@@ -533,10 +576,14 @@ export default function MachineReportPage() {
   }, [state]);
 
   return (
-    <div id="printable-report" className="p-4 print:p-0">
+    <div id="printable-report" data-print-ready={printReady} className="p-4 print:p-0">
       {/* eslint-disable-next-line react/no-unknown-property */}
       <style jsx global>{`
         @media print {
+          #printable-report[data-print-ready="false"] > :not(style):not(.report-print-blocked) {
+            display: none !important;
+          }
+          #printable-report[data-print-ready="true"] .report-print-blocked { display: none; }
           body * {
             visibility: hidden;
           }
@@ -600,6 +647,9 @@ export default function MachineReportPage() {
         }
       `}</style>
 
+      <div className="report-print-blocked hidden print:block">
+        ไม่สามารถพิมพ์รายงานได้ ข้อมูลรายงานหรือตารางเปลี่ยนอะไหล่ยังไม่พร้อม กรุณารอโหลดข้อมูลให้ครบหรือลองใหม่
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <h1 className="text-2xl font-bold">รายงานประวัติเครื่องจักร</h1>
         <Link
@@ -682,11 +732,18 @@ export default function MachineReportPage() {
 
             <button
               type="button"
-              onClick={() => window.print()}
-              className="mt-4 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-md bg-accent px-4 text-sm font-medium text-white hover:bg-accent/90 sm:w-fit"
+              onClick={handlePrint}
+              disabled={!printReady}
+              className="mt-4 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-md bg-accent px-4 text-sm font-medium text-white hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-fit"
             >
               🖨 พิมพ์ / บันทึก PDF
             </button>
+            {timeline.status === "loading" && <p role="status" className="mt-2 text-sm text-primary/60">กำลังโหลดตารางเปลี่ยนอะไหล่สำหรับ PDF...</p>}
+            {timeline.status === "error" && <div role="alert" className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+              <p>ไม่สามารถโหลดตารางเปลี่ยนอะไหล่สำหรับ PDF ได้ กรุณาลองใหม่ก่อนพิมพ์รายงาน</p>
+              <button type="button" onClick={() => setTimelineRetry((value) => value + 1)} className="mt-2 min-h-[44px] rounded-md border border-red-300 px-3">ลองใหม่</button>
+            </div>}
+            {printReady && timelineOverflow && <p role="alert" className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">ตารางเปลี่ยนอะไหล่มีข้อมูลมากเกินหนึ่งหน้า A4 ที่อ่านได้ PDF จะแสดงทุกรายการต่อในหน้าถัดไป โดยไม่มีการตัดข้อมูล</p>}
           </div>
 
           {/* Print-only banner */}
@@ -1319,6 +1376,16 @@ export default function MachineReportPage() {
               </>
             )}
           </section>
+
+          {timeline.status === "loaded" && timeline.machineId === params.id && (
+            <PartsReplacementTimelinePrint
+              machine={state.data.machine}
+              links={timeline.data.links}
+              replacements={timeline.data.replacements}
+              generatedAt={generatedAt}
+              onOverflowChange={setTimelineOverflow}
+            />
+          )}
         </>
       )}
     </div>

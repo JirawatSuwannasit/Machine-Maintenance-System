@@ -18,7 +18,7 @@ function load(path) {
   ) });
   return exports;
 }
-const { systemYears, timelineYears, localCalendarDate, buildTimelineRows, timelineRecommendation, defaultTimelineRange, validateTimelineRange, reconcileTimelineVisibility, installationYear } = load('lib/partsReplacementTimeline.ts');
+const { systemYears, timelineYears, localCalendarDate, buildTimelineRows, timelineRecommendation, defaultTimelineRange, validateTimelineRange, reconcileTimelineVisibility, installationYear, reportTimelineYears } = load('lib/partsReplacementTimeline.ts');
 let assertions = 0;
 function equal(actual, expected) { assert.equal(actual, expected); assertions++; }
 const originalTz = process.env.TZ;
@@ -37,6 +37,11 @@ try {
     const older=defaultTimelineRange('1990-12-31',new Date(2026,9,30));
     equal(older.startYear,1990);equal(older.endYear,2019);equal(timelineYears(older.startYear,older.endYear).length,30);
     equal(installationYear('2011-01-01'),2011);equal(installationYear(null),null);
+    for (const [installed,start,end,length] of [['1998-04-30',2017,2026,10],['2022-01-01',2022,2026,5],['2026-10-30',2026,2026,1],[null,2017,2026,10]]) {
+      const printed=reportTimelineYears(installed,new Date(2026,9,30));
+      equal(printed.length,length);equal(printed[0],start);equal(printed[length-1],end);
+    }
+    equal(reportTimelineYears('2027-01-01',new Date(2026,9,30)).length,0);
   }
 } finally { if (originalTz===undefined) delete process.env.TZ; else process.env.TZ=originalTz; }
 const part = {part_code:'P1',part_name:'Part one',default_lifespan_days:365,stock_tracking_enabled:false};
@@ -93,4 +98,4 @@ equal(defaultTimelineRange('1998-04-30',now).endYear,2027);
 equal(defaultTimelineRange('2028-01-01',now).startYear,2028);
 equal(defaultTimelineRange('2028-01-01',now).endYear,2028);
 equal(defaultTimelineRange('9999-12-31',now).endYear,9999);
-console.log(`PASS: ${assertions} assertions covering calendar ages, grouping/deduplication, real due dates, installation boundaries, bounded defaults, custom ranges and selection reconciliation.`);
+console.log(`PASS: ${assertions} assertions covering calendar ages, grouping/deduplication, real due dates, installation boundaries, PDF year windows, custom ranges and selection reconciliation.`);
