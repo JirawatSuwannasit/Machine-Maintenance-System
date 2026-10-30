@@ -18,6 +18,14 @@ export function defaultTimelineRange(installDate: string | null, now: Date = new
   return { startYear, endYear };
 }
 
+// The PDF is independent of interactive filters: up to ten completed/current
+// calendar years, never before installation and never a future year.
+export function reportTimelineYears(installDate: string | null, now: Date = new Date()): number[] {
+  const currentYear = now.getFullYear();
+  const startYear = Math.max(currentYear - 9, installationYear(installDate) ?? currentYear - 9);
+  return startYear > currentYear ? [] : timelineYears(startYear, currentYear);
+}
+
 export type TimelinePart = {
   part_code: string;
   part_name: string;
