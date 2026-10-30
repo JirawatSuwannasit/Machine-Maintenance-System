@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -60,6 +61,7 @@ type ReplacementRow = {
   reason: string | null;
   qty_used: number;
   total_cost: number | string;
+  notes: string | null;
 };
 
 const REASON_LABEL: Record<string, string> = {
@@ -138,7 +140,7 @@ async function fetchLinksAndHistory(machineId: string): Promise<LinksResult> {
     supabase.from("machine_parts").select(LINKS_SELECT).eq("machine_id", machineId),
     supabase
       .from("part_replacements")
-      .select("id, part_id, replaced_at, replaced_by, reason, qty_used, total_cost")
+      .select("id, part_id, replaced_at, replaced_by, reason, qty_used, total_cost, notes")
       .eq("machine_id", machineId)
       .order("replaced_at", { ascending: false })
       .order("created_at", { ascending: false }),
@@ -180,8 +182,9 @@ type PickerState =
   | { status: "loaded"; options: SparePartOption[] };
 
 export default function PartsTab({ machineId, isAdmin, canWork }: PartsTabProps) {
+  const searchParams = useSearchParams();
   const [state, setState] = useState<TabState>({ status: "loading" });
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set(searchParams.get("part") ? [searchParams.get("part")!] : []));
 
   const [showPicker, setShowPicker] = useState(false);
   const [pickerState, setPickerState] = useState<PickerState>({ status: "idle" });
@@ -398,6 +401,7 @@ export default function PartsTab({ machineId, isAdmin, canWork }: PartsTabProps)
 
   return (
     <div>
+      {searchParams.get("replacement_updated") === "1" && <p role="status" className="mb-3 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800">แก้ไขประวัติการเปลี่ยนอะไหล่เรียบร้อยแล้ว</p>}
       {topButtons}
       {picker}
 
@@ -512,6 +516,8 @@ export default function PartsTab({ machineId, isAdmin, canWork }: PartsTabProps)
                               <span>จำนวน: {entry.qty_used}</span>
                               <span>รวม: {formatMoneyThai(entry.total_cost)}</span>
                             </div>
+                            {entry.notes && <p className="mt-2 break-words text-xs text-primary/60">หมายเหตุ: {entry.notes}</p>}
+                            {isAdmin && <Link href={`/parts/replacements/${entry.id}/edit`} aria-label={`แก้ไขประวัติการเปลี่ยนอะไหล่วันที่ ${formatDateThai(entry.replaced_at)}`} className="mt-2 inline-flex min-h-[44px] items-center rounded-md border border-primary/20 px-3 text-sm font-medium text-primary hover:bg-white">แก้ไข</Link>}
                           </div>
                         ))}
                       </div>
