@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { fetchPartsReplacementTimeline } from "@/lib/fetchPartsReplacementTimeline";
 import {
   buildTimelineRows, localCalendarDate, systemYears, timelineRecommendation, timelineYears,
-  defaultTimelineRange, validateTimelineRange, reconcileTimelineVisibility,
+  defaultTimelineRange, installationYear, validateTimelineRange, reconcileTimelineVisibility,
   type TimelineVisibility, type TimelineLink, type TimelineReplacement,
 } from "@/lib/partsReplacementTimeline";
 import { formatDateThai } from "@/lib/pmDueDate";
@@ -27,7 +27,7 @@ export default function PartsReplacementTimeline({ machineId, installDate }: {
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [retry, setRetry] = useState(0);
-  const [range, setRange] = useState(() => defaultTimelineRange());
+  const [range, setRange] = useState(() => defaultTimelineRange(installDate));
   const [yearInputs, setYearInputs] = useState(() => ({
     start: String(range.startYear), end: String(range.endYear),
   }));
@@ -43,7 +43,8 @@ export default function PartsReplacementTimeline({ machineId, installDate }: {
   const searchInputId = useId();
   const today = localCalendarDate(new Date());
   const { startYear, endYear } = range;
-  const rangeError = validateTimelineRange(yearInputs.start, yearInputs.end);
+  const minimumYear = installationYear(installDate) ?? 1;
+  const rangeError = validateTimelineRange(yearInputs.start, yearInputs.end, installDate);
   const years = timelineYears(startYear, endYear);
   const rows = useMemo(() => state.status === "loaded" && state.machineId === machineId
     ? buildTimelineRows(state.links, state.replacements, today) : [], [state, today, machineId]);
@@ -55,6 +56,13 @@ export default function PartsReplacementTimeline({ machineId, installDate }: {
   );
   const selectedRow = visibleRows.find((row) => row.partId === selection?.partId);
   const selectedEntries = selection ? selectedRow?.byYear.get(selection.year) ?? [] : [];
+
+  useEffect(() => {
+    const initial = defaultTimelineRange(installDate);
+    setRange(initial);
+    setYearInputs({ start: String(initial.startYear), end: String(initial.endYear) });
+    setSelection(null);
+  }, [machineId, installDate]);
 
   useEffect(() => {
     setVisibility({ machineId, hiddenPartIds: new Set() });
@@ -78,6 +86,8 @@ export default function PartsReplacementTimeline({ machineId, installDate }: {
   }, [machineId, retry]);
 
   function applyRange(start: number, end: number) {
+    // The handler enforces the same bounds even if a disabled click is bypassed.
+    if (validateTimelineRange(String(start), String(end), installDate)) return;
     setRange({ startYear: start, endYear: end });
     setYearInputs({ start: String(start), end: String(end) });
     setSelection((current) => current && (current.year < start || current.year > end) ? null : current);
@@ -88,7 +98,7 @@ export default function PartsReplacementTimeline({ machineId, installDate }: {
     setYearInputs(inputs);
     // Keep the last valid table visible while the user clears/types a field.
     // Do not replace an invalid entry or reset any parts selections.
-    if (!validateTimelineRange(inputs.start, inputs.end)) {
+    if (!validateTimelineRange(inputs.start, inputs.end, installDate)) {
       setRange({ startYear: Number(inputs.start), endYear: Number(inputs.end) });
       setSelection((current) => current && (current.year < Number(inputs.start) || current.year > Number(inputs.end)) ? null : current);
     }
@@ -136,7 +146,7 @@ export default function PartsReplacementTimeline({ machineId, installDate }: {
           <div className="grid grid-cols-2 gap-3 sm:max-w-sm">
             <div className="min-w-0">
               <label htmlFor={startInputId} className="block text-sm font-medium">ปีเริ่มต้น</label>
-              <input id={startInputId} type="number" min="1" max="9999" step="1" inputMode="numeric"
+              <input id={startInputId} type="number" min={minimumYear} max="9999" step="1" inputMode="numeric"
                 value={yearInputs.start} onChange={(event) => changeYear("start", event.target.value)}
                 aria-invalid={Boolean(rangeError)} aria-describedby={rangeErrorId}
                 className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-primary/20 bg-white px-3 py-2 text-sm focus:border-accent focus:outline-accent" />
@@ -154,15 +164,15 @@ export default function PartsReplacementTimeline({ machineId, installDate }: {
           </p>
           <div className="flex flex-wrap items-center justify-between gap-2" aria-label="เลือกช่วงปี">
             <div className="flex flex-wrap items-center gap-2">
-              <button type="button" onClick={() => applyRange(startYear - years.length, endYear - years.length)}
-                disabled={Boolean(rangeError) || startYear - years.length < 1}
+              <button type="button" onClick={() => applyRange(startYear - 1, endYear - 1)}
+                disabled={Boolean(rangeError) || startYear <= minimumYear}
                 className={`${controlClass} disabled:cursor-not-allowed disabled:opacity-50`} aria-label="ช่วงปีก่อนหน้า"><ChevronLeft size={16} aria-hidden="true" />ก่อนหน้า</button>
               <span aria-live="polite" className="text-sm font-semibold tabular-nums">{startYear}–{endYear}</span>
-              <button type="button" onClick={() => applyRange(startYear + years.length, endYear + years.length)}
-                disabled={Boolean(rangeError) || endYear + years.length > 9999}
+              <button type="button" onClick={() => applyRange(startYear + 1, endYear + 1)}
+                disabled={Boolean(rangeError) || endYear >= 9999}
                 className={`${controlClass} disabled:cursor-not-allowed disabled:opacity-50`} aria-label="ช่วงปีถัดไป">ถัดไป<ChevronRight size={16} aria-hidden="true" /></button>
             </div>
-            <button type="button" onClick={() => { const current = defaultTimelineRange(); applyRange(current.startYear, current.endYear); }} className="min-h-[44px] px-2 text-sm font-medium text-accent">กลับช่วงปีปัจจุบัน</button>
+            <button type="button" onClick={() => { const current = defaultTimelineRange(installDate); applyRange(current.startYear, current.endYear); }} className="min-h-[44px] px-2 text-sm font-medium text-accent">กลับช่วงปีเริ่มต้น</button>
           </div>
         </div>
         <div className="rounded-lg border border-primary/10 p-3">

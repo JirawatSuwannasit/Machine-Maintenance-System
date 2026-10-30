@@ -18,7 +18,7 @@ function load(path) {
   ) });
   return exports;
 }
-const { systemYears, timelineYears, localCalendarDate, buildTimelineRows, timelineRecommendation, defaultTimelineRange, validateTimelineRange, reconcileTimelineVisibility } = load('lib/partsReplacementTimeline.ts');
+const { systemYears, timelineYears, localCalendarDate, buildTimelineRows, timelineRecommendation, defaultTimelineRange, validateTimelineRange, reconcileTimelineVisibility, installationYear } = load('lib/partsReplacementTimeline.ts');
 let assertions = 0;
 function equal(actual, expected) { assert.equal(actual, expected); assertions++; }
 const originalTz = process.env.TZ;
@@ -29,9 +29,14 @@ try {
     equal(systemYears(null,2026),null);
     equal(systemYears('2000-02-29',2026),26);
     equal(localCalendarDate(new Date(2026,0,1,0,5)),'2026-01-01');
-    const range=defaultTimelineRange(new Date(2026,9,30));
+    const range=defaultTimelineRange(null,new Date(2026,9,30));
     const years=timelineYears(range.startYear,range.endYear);
     equal(years.length,11); equal(years[0],2017); equal(years[10],2027);
+    const installed=defaultTimelineRange('2011-04-30',new Date(2026,9,30));
+    equal(installed.startYear,2011);equal(installed.endYear,2027);
+    const older=defaultTimelineRange('1990-12-31',new Date(2026,9,30));
+    equal(older.startYear,1990);equal(older.endYear,2019);equal(timelineYears(older.startYear,older.endYear).length,30);
+    equal(installationYear('2011-01-01'),2011);equal(installationYear(null),null);
   }
 } finally { if (originalTz===undefined) delete process.env.TZ; else process.env.TZ=originalTz; }
 const part = {part_code:'P1',part_name:'Part one',default_lifespan_days:365,stock_tracking_enabled:false};
@@ -79,4 +84,13 @@ equal(refreshed.hiddenPartIds.has('removed'),false);
 equal(previous.hiddenPartIds.has('removed'),true); // Reconciliation does not mutate the previous state.
 const changedMachine=reconcileTimelineVisibility(previous,'machine-two',['p1','new-part']);
 equal(changedMachine.hiddenPartIds.size,0);equal(changedMachine.machineId,'machine-two');
-console.log(`PASS: ${assertions} assertions covering calendar ages, grouping/deduplication, real due dates, custom ranges and selection reconciliation.`);
+equal(validateTimelineRange('2010','2026','2011-04-30'),'ปีเริ่มต้นต้องไม่ก่อนปีที่ติดตั้งเครื่องจักร (2011)');
+equal(validateTimelineRange('2011','2026','2011-04-30'),null);
+equal(validateTimelineRange('2015','2027','2011-04-30'),null);
+equal(validateTimelineRange('2011','2041','2011-04-30'),'เลือกช่วงปีได้ไม่เกิน 30 ปี');
+equal(validateTimelineRange('2010','2026',null),null);
+equal(defaultTimelineRange('1998-04-30',now).endYear,2027);
+equal(defaultTimelineRange('2028-01-01',now).startYear,2028);
+equal(defaultTimelineRange('2028-01-01',now).endYear,2028);
+equal(defaultTimelineRange('9999-12-31',now).endYear,9999);
+console.log(`PASS: ${assertions} assertions covering calendar ages, grouping/deduplication, real due dates, installation boundaries, bounded defaults, custom ranges and selection reconciliation.`);

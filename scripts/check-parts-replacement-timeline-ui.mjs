@@ -95,9 +95,9 @@ try {
  const names=await page.getByRole('button').allTextContents();
  assert.ok(names.indexOf('ตารางเปลี่ยนอะไหล่')===names.indexOf('อะไหล่')+1);
  const headers=await page.locator('table thead th').allTextContents();
- assert.deepEqual(headers,['อะไหล่',...Array.from({length:11},(_,i)=>String(2017+i)),'คำแนะนำ']);
+ assert.deepEqual(headers,['อะไหล่',...Array.from({length:30},(_,i)=>String(1998+i)),'คำแนะนำ']);
  const ages=await page.locator('table tbody tr').first().locator('td').allTextContents();
- assert.equal(ages[7],'26');assert.equal(ages[9],'28');assert.equal(ages[10],'29');
+ assert.equal(ages[26],'26');assert.equal(ages[28],'28');assert.equal(ages[29],'29');
  assert.equal(await page.getByText('P2',{exact:true}).count(),1);
  assert.equal(await page.getByText('P3',{exact:true}).count(),1);
  assert.equal(await page.getByText('ไม่กำหนดรอบ',{exact:true}).count(),1);
@@ -122,15 +122,16 @@ try {
  await page.screenshot({path:'/tmp/mms033-mobile.png'});scenarios++;
  await page.setViewportSize({width:1440,height:1000});
  await page.screenshot({path:'/tmp/mms033-desktop.png'});
+ assert.equal(await page.getByRole('button',{name:'ช่วงปีก่อนหน้า',exact:true}).isDisabled(),true);
+ await page.getByRole('button',{name:'ช่วงปีถัดไป',exact:true}).click();
+ assert.equal(await page.locator('table thead th').nth(1).textContent(),'1999');
  await page.getByRole('button',{name:'ช่วงปีก่อนหน้า',exact:true}).click();
- assert.equal(await page.locator('table thead th').nth(1).textContent(),'2006');
- await page.getByRole('button',{name:'ช่วงปีถัดไป',exact:true}).click();
- assert.equal(await page.locator('table thead th').nth(1).textContent(),'2017');
- await page.getByRole('button',{name:'ช่วงปีถัดไป',exact:true}).click();
- assert.equal(await page.locator('table thead th').nth(1).textContent(),'2028');
+ assert.equal(await page.locator('table thead th').nth(1).textContent(),'1998');
+ await page.getByRole('spinbutton',{name:'ปีสิ้นสุด',exact:true}).fill('2040');
+ await page.getByRole('spinbutton',{name:'ปีเริ่มต้น',exact:true}).fill('2030');
  assert.equal(await region(page).getByRole('button').count(),0);
- await page.getByRole('button',{name:'กลับช่วงปีปัจจุบัน',exact:true}).click();
- assert.equal(await page.locator('table thead th').nth(1).textContent(),'2017');scenarios++;
+ await page.getByRole('button',{name:'กลับช่วงปีเริ่มต้น',exact:true}).click();
+ assert.equal(await page.locator('table thead th').nth(1).textContent(),'1998');scenarios++;
  // Existing tabs retain their real components and can still load.
  for(const [tab,text] of [['ประวัติเสีย','ยังไม่มีประวัติการเสีย'],['ประวัติ PM','ยังไม่มีประวัติการทำ PM'],['อะไหล่','P1']]){
    await page.getByRole('button',{name:tab,exact:true}).click();
@@ -150,7 +151,8 @@ try {
  await page.context().close();
  page=await open({machine:{...machine,install_date:'2020-12-31'}});await region(page).waitFor();
  const newer=await page.locator('table tbody tr').first().locator('td').allTextContents();
- assert.equal(newer[0],'-');assert.equal(newer[3],'0');assert.equal(newer[9],'6');scenarios++;
+ assert.equal(newer[0],'0');assert.equal(newer[6],'6');
+ assert.equal(await page.getByRole('spinbutton',{name:'ปีเริ่มต้น',exact:true}).getAttribute('min'),'2020');scenarios++;
  await page.context().close();
  page=await open({links:[],replacements:[]});await page.getByText('เครื่องนี้ยังไม่มีอะไหล่ที่ผูกไว้หรือประวัติการเปลี่ยนอะไหล่',{exact:true}).waitFor();scenarios++;
  await page.context().close();
@@ -197,7 +199,7 @@ try {
  const tableRows=page.locator('table tbody tr');
  const rowFor=code=>tableRows.filter({has:page.getByText(code,{exact:true})});
  const option=code=>picker.getByRole('checkbox',{name:new RegExp('^'+code+' —')});
- assert.equal(await start.inputValue(),'2017');assert.equal(await end.inputValue(),'2027');
+ assert.equal(await start.inputValue(),'1998');assert.equal(await end.inputValue(),'2027');
  await page.getByText('เลือกแล้ว 3 / 3 รายการ',{exact:true}).waitFor();
  await page.getByRole('button',{name:'เลือกอะไหล่ที่แสดง',exact:true}).click();
  assert.equal(await picker.getByRole('checkbox').count(),3);
@@ -235,7 +237,7 @@ try {
  assert.equal(await page.getByRole('region',{name:'รายละเอียดการเปลี่ยนอะไหล่',exact:true}).isVisible(),false);
  assert.equal(await rowFor('P1').count(),0);await option('P1').check();
  assert.equal(await page.getByRole('region',{name:'รายละเอียดการเปลี่ยนอะไหล่',exact:true}).isVisible(),false);scenarios++;
- for(const [field,value,text] of [[start,'','กรุณาระบุปี ค.ศ.'],[start,'2024.5','กรุณาระบุปี ค.ศ.'],[end,'2023','ปีสิ้นสุดต้องไม่น้อยกว่าปีเริ่มต้น'],[start,'1996','เลือกช่วงปีได้ไม่เกิน 30 ปี']]){
+ for(const [field,value,text] of [[start,'','กรุณาระบุปี ค.ศ.'],[start,'2024.5','กรุณาระบุปี ค.ศ.'],[end,'2023','ปีสิ้นสุดต้องไม่น้อยกว่าปีเริ่มต้น'],[end,'2054','เลือกช่วงปีได้ไม่เกิน 30 ปี']]){
    await field.fill(value);await page.getByRole('alert').filter({hasText:text}).waitFor();
    assert.equal(await page.locator('table thead th').nth(1).textContent(),'2024');
    assert.equal(await page.locator('table thead th').count(),5);
@@ -245,14 +247,14 @@ try {
  }
  assert.equal(await page.getByRole('alert').count(),0);scenarios++;
  await page.getByRole('button',{name:'ช่วงปีก่อนหน้า',exact:true}).click();
- assert.equal(await start.inputValue(),'2021');assert.equal(await end.inputValue(),'2023');
+ assert.equal(await start.inputValue(),'2023');assert.equal(await end.inputValue(),'2025');
  await page.getByRole('button',{name:'ช่วงปีถัดไป',exact:true}).click();
  assert.equal(await start.inputValue(),'2024');assert.equal(await end.inputValue(),'2026');
  await page.getByRole('button',{name:'ช่วงปีถัดไป',exact:true}).click();
- assert.equal(await start.inputValue(),'2027');assert.equal(await end.inputValue(),'2029');
+ assert.equal(await start.inputValue(),'2025');assert.equal(await end.inputValue(),'2027');
  assert.equal(await region(page).getByRole('button').count(),0);
- await page.getByRole('button',{name:'กลับช่วงปีปัจจุบัน',exact:true}).click();
- assert.equal(await start.inputValue(),'2017');assert.equal(await end.inputValue(),'2027');
+ await page.getByRole('button',{name:'กลับช่วงปีเริ่มต้น',exact:true}).click();
+ assert.equal(await start.inputValue(),'1998');assert.equal(await end.inputValue(),'2027');
  assert.equal(await option('P3').isChecked(),false);scenarios++;
  await end.fill('2029');await start.fill('2000');
  assert.equal(await page.locator('table thead th').count(),32);
@@ -273,7 +275,7 @@ try {
  await page.getByText('ยังไม่ได้เลือกอะไหล่ กรุณาเลือกอะไหล่ที่ต้องการแสดง',{exact:true}).waitFor();
  assert.equal(await page.getByText('เครื่องนี้ยังไม่มีอะไหล่ที่ผูกไว้หรือประวัติการเปลี่ยนอะไหล่',{exact:true}).count(),0);
  await page.getByText('เลือกแล้ว 0 / 3 รายการ',{exact:true}).waitFor();
- await page.getByRole('button',{name:'กลับช่วงปีปัจจุบัน',exact:true}).click();assert.equal(await tableRows.count(),1);scenarios++;
+ await page.getByRole('button',{name:'กลับช่วงปีเริ่มต้น',exact:true}).click();assert.equal(await tableRows.count(),1);scenarios++;
  await search.fill('P3');await page.getByRole('button',{name:'เลือกทั้งหมด',exact:true}).click();
  assert.equal(await tableRows.count(),4);await page.getByText('เลือกแล้ว 3 / 3 รายการ',{exact:true}).waitFor();
  assert.equal(await search.inputValue(),'P3');await search.fill('');
@@ -292,18 +294,96 @@ try {
  await page.getByRole('searchbox',{name:'ค้นหารหัสหรือชื่ออะไหล่',exact:true}).fill('P3');
  const nextId='22222222-2222-4222-8222-222222222222';
  await page.evaluate(({nextId,link,part})=>{
-   window.__db.machine.id=nextId;
+   window.__db.machine.id=nextId;window.__db.machine.install_date='2011-04-30';
    window.__db.links=[{...link,machine_id:nextId,spare_parts:{...part,part_name:'เครื่องใหม่'}}];
    window.__db.replacements=[];window.__rerender();
  },{nextId,link,part});
  await page.getByText('เลือกแล้ว 1 / 1 รายการ',{exact:true}).waitFor();
  assert.equal(await region(page).getByText('เครื่องใหม่',{exact:true}).count(),1);
+ assert.equal(await page.getByRole('spinbutton',{name:'ปีเริ่มต้น',exact:true}).inputValue(),'2011');
+ assert.equal(await page.getByRole('spinbutton',{name:'ปีเริ่มต้น',exact:true}).getAttribute('min'),'2011');
+ assert.equal(await page.getByRole('spinbutton',{name:'ปีสิ้นสุด',exact:true}).inputValue(),'2027');
  await page.getByRole('button',{name:'เลือกอะไหล่ที่แสดง',exact:true}).click();
  assert.equal(await page.getByRole('searchbox',{name:'ค้นหารหัสหรือชื่ออะไหล่',exact:true}).inputValue(),'');
  assert.equal(await page.getByRole('checkbox').isChecked(),true);assert.equal(await page.evaluate(()=>window.__db.writes),0);scenarios++;
  await page.context().close();
+
+ // MMS-035: installation defaults, hard boundaries and exactly one-year shifts.
+ page=await open({machine:{...machine,install_date:'2011-04-30'}});await region(page).waitFor();
+ const from=page.getByRole('spinbutton',{name:'ปีเริ่มต้น',exact:true});
+ const to=page.getByRole('spinbutton',{name:'ปีสิ้นสุด',exact:true});
+ const previous=page.getByRole('button',{name:'ช่วงปีก่อนหน้า',exact:true});
+ const next=page.getByRole('button',{name:'ช่วงปีถัดไป',exact:true});
+ const reset=page.getByRole('button',{name:'กลับช่วงปีเริ่มต้น',exact:true});
+ const assertRange=async(a,b)=>{
+   assert.equal(await from.inputValue(),String(a));assert.equal(await to.inputValue(),String(b));
+   assert.equal(await page.locator('table thead th').nth(1).textContent(),String(a));
+   assert.equal(await page.locator('table thead th').nth(b-a+1).textContent(),String(b));
+   assert.equal(await page.locator('table thead th').count(),b-a+3);
+ };
+ await assertRange(2011,2027);assert.equal(await from.getAttribute('min'),'2011');assert.equal(await previous.isDisabled(),true);
+ for(let i=0;i<3;i++)await previous.evaluate(button=>button.click());await assertRange(2011,2027);
+ // The range handler must also reject a click when disabled DOM state is tampered with.
+ await previous.evaluate(button=>{button.disabled=false;button.click();});await assertRange(2011,2027);
+ await next.click();await assertRange(2012,2028);
+ await previous.click();await assertRange(2011,2027);assert.equal(await previous.isDisabled(),true);scenarios++;
+ await page.getByRole('button',{name:'เลือกอะไหล่ที่แสดง',exact:true}).click();
+ const hiddenOption=page.getByRole('checkbox',{name:/^P2 —/});await hiddenOption.uncheck();
+ await to.fill('2026');await from.fill('2010');
+ await page.getByRole('alert').filter({hasText:'ปีเริ่มต้นต้องไม่ก่อนปีที่ติดตั้งเครื่องจักร (2011)'}).waitFor();
+ assert.equal(await from.inputValue(),'2010');
+ assert.equal(await page.locator('table thead th').nth(1).textContent(),'2011');
+ assert.equal(await page.locator('table thead th').count(),18); // Last valid 2011–2026.
+ await from.fill('2011');await assertRange(2011,2026);
+ await from.fill('2015');await to.fill('2027');await assertRange(2015,2027);
+ await previous.click();await assertRange(2014,2026);await next.click();await assertRange(2015,2027);
+ assert.equal(await hiddenOption.isChecked(),false);scenarios++;
+ await from.fill('2024');await to.fill('2026');await assertRange(2024,2026);
+ await next.click();await assertRange(2025,2027);await previous.click();await assertRange(2024,2026);
+ assert.equal(await page.getByText('แนะนำเปลี่ยน',{exact:true}).count(),1);
+ await cell(page,'P1',2024).click();
+ assert.equal(await page.getByRole('region',{name:'รายละเอียดการเปลี่ยนอะไหล่',exact:true}).locator('li').count(),2);
+ await next.click();await assertRange(2025,2027);
+ assert.equal(await page.getByRole('region',{name:'รายละเอียดการเปลี่ยนอะไหล่',exact:true}).isVisible(),false);
+ await reset.click();await assertRange(2011,2027);assert.equal(await hiddenOption.isChecked(),false);
+ const installedAges=await page.locator('table tbody tr').first().locator('td').allTextContents();
+ assert.equal(installedAges[0],'0');assert.equal(installedAges[13],'13');assert.equal(installedAges[16],'16');
+ assert.equal(await page.getByRole('button',{name:/ปี 2027:/}).count(),0);scenarios++;
+ await page.evaluate(()=>window.__rerender());await assertRange(2011,2027);
+ await from.fill('2015');await to.fill('2027');
+ await page.evaluate(()=>window.__rerender());await assertRange(2015,2027);assert.equal(await hiddenOption.isChecked(),false);
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=375),true);
+ await previous.scrollIntoViewIfNeeded();await page.screenshot({path:'/tmp/mms035-mobile.png',fullPage:true});
+ assert.equal(await page.evaluate(()=>window.__db.writes),0);scenarios++;
+ await to.fill('9999');await from.fill('9970');await assertRange(9970,9999);assert.equal(await next.isDisabled(),true);
+ await next.evaluate(button=>{button.disabled=false;button.click();});await assertRange(9970,9999);
+ await reset.click();await assertRange(2011,2027);assert.equal(await hiddenOption.isChecked(),false);scenarios++;
+ await page.context().close();
+ page=await open({machine:{...machine,install_date:'1990-04-30'}});await region(page).waitFor();
+ assert.equal(await page.getByRole('spinbutton',{name:'ปีเริ่มต้น',exact:true}).inputValue(),'1990');
+ assert.equal(await page.getByRole('spinbutton',{name:'ปีสิ้นสุด',exact:true}).inputValue(),'2019');
+ assert.equal(await page.locator('table thead th').count(),32);
+ assert.equal(await page.getByRole('button',{name:'ช่วงปีก่อนหน้า',exact:true}).isDisabled(),true);
+ await page.getByRole('button',{name:'ช่วงปีถัดไป',exact:true}).click();
+ assert.equal(await page.getByRole('spinbutton',{name:'ปีเริ่มต้น',exact:true}).inputValue(),'1991');
+ assert.equal(await page.getByRole('spinbutton',{name:'ปีสิ้นสุด',exact:true}).inputValue(),'2020');
+ await page.getByRole('button',{name:'กลับช่วงปีเริ่มต้น',exact:true}).click();
+ assert.equal(await page.getByRole('spinbutton',{name:'ปีเริ่มต้น',exact:true}).inputValue(),'1990');scenarios++;
+ await page.context().close();
+ page=await open({machine:{...machine,install_date:null}});await region(page).waitFor();
+ assert.equal(await page.getByRole('spinbutton',{name:'ปีเริ่มต้น',exact:true}).inputValue(),'2017');
+ assert.equal(await page.getByRole('spinbutton',{name:'ปีเริ่มต้น',exact:true}).getAttribute('min'),'1');
+ assert.equal(await page.getByRole('spinbutton',{name:'ปีสิ้นสุด',exact:true}).inputValue(),'2027');
+ await page.getByRole('button',{name:'ช่วงปีก่อนหน้า',exact:true}).click();
+ assert.equal(await page.getByRole('spinbutton',{name:'ปีเริ่มต้น',exact:true}).inputValue(),'2016');
+ assert.equal(await page.getByRole('spinbutton',{name:'ปีสิ้นสุด',exact:true}).inputValue(),'2026');
+ await page.getByRole('button',{name:'กลับช่วงปีเริ่มต้น',exact:true}).click();
+ assert.equal(await page.getByRole('spinbutton',{name:'ปีเริ่มต้น',exact:true}).inputValue(),'2017');
+ await page.getByText('ยังไม่ได้ระบุวันที่ติดตั้งเครื่องจักร',{exact:false}).waitFor();
+ assert.equal(await page.evaluate(()=>window.__db.writes),0);scenarios++;
+ await page.context().close();
  assert.deepEqual(pageErrors,[]);
- console.log(`PASS: ${scenarios} browser scenarios including MMS-033 regressions, custom ranges, part visibility, machine changes and 375px layout.`);
+ console.log(`PASS: ${scenarios} browser scenarios including MMS-033/034 regressions, installation defaults/boundaries, yearly navigation and 375px layout.`);
 } finally {
  await browser?.close();
  if(server)await new Promise(r=>server.close(r));
