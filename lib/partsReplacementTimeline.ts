@@ -4,9 +4,18 @@ import { computeDueDiffDays, computeDueDisplay, type DueDisplay } from "@/lib/pm
 export const TIMELINE_WINDOW_YEARS = 11;
 export const MAX_TIMELINE_YEARS = 30;
 
-export function defaultTimelineRange(now: Date = new Date()) {
-  const startYear = now.getFullYear() - 9;
-  return { startYear, endYear: startYear + TIMELINE_WINDOW_YEARS - 1 };
+export function installationYear(installDate: string | null): number | null {
+  if (!installDate) return null;
+  const year = Number(installDate.slice(0, 4));
+  return Number.isInteger(year) && year >= 1 && year <= 9999 ? year : null;
+}
+
+export function defaultTimelineRange(installDate: string | null, now: Date = new Date()) {
+  const startYear = installationYear(installDate) ?? now.getFullYear() - 9;
+  // Old machines open at their first 30 years, not a recent rolling window.
+  // A future installation still needs a nonempty range starting at installation.
+  const endYear = Math.min(9999, startYear + MAX_TIMELINE_YEARS - 1, Math.max(startYear, now.getFullYear() + 1));
+  return { startYear, endYear };
 }
 
 export type TimelinePart = {
@@ -45,10 +54,12 @@ export function localCalendarDate(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-export function validateTimelineRange(start: string, end: string): string | null {
+export function validateTimelineRange(start: string, end: string, installDate: string | null = null): string | null {
   if (![start, end].every((year) => /^\d+$/.test(year) && Number(year) >= 1 && Number(year) <= 9999)) {
     return "กรุณาระบุปี ค.ศ. เป็นจำนวนเต็มระหว่าง 1–9999 ทั้งสองช่อง";
   }
+  const minimum = installationYear(installDate);
+  if (minimum !== null && Number(start) < minimum) return `ปีเริ่มต้นต้องไม่ก่อนปีที่ติดตั้งเครื่องจักร (${minimum})`;
   if (Number(end) < Number(start)) return "ปีสิ้นสุดต้องไม่น้อยกว่าปีเริ่มต้น";
   if (Number(end) - Number(start) + 1 > MAX_TIMELINE_YEARS) return "เลือกช่วงปีได้ไม่เกิน 30 ปี";
   return null;
@@ -80,8 +91,8 @@ export function reconcileTimelineVisibility(
 // anniversary has passed, so completed years = column year - install year.
 export function systemYears(installDate: string | null, year: number): number | null {
   if (!installDate) return null;
-  const installedYear = Number(installDate.slice(0, 4));
-  return Number.isInteger(installedYear) && installedYear > 0 && year >= installedYear
+  const installedYear = installationYear(installDate);
+  return installedYear !== null && year >= installedYear
     ? year - installedYear
     : null;
 }
