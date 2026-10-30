@@ -21,7 +21,8 @@ const machine={id,machine_code:'TS-01',machine_name:'เครื่องทด
 const part={id:'p1',part_code:'P0001',part_name:'ชุดลูกปืนทดสอบ',default_lifespan_days:365,stock_tracking_enabled:false};
 const replacement={id:'r1',machine_id:id,part_id:'p1',replaced_at:'2020-03-15',replaced_by:'ช่างทดสอบ',qty_used:2,unit_cost:'12.50',total_cost:'25.00',reason:'planned',spare_parts:part};
 function fixture(count=12,installDate='1998-04-30') {
- const links=Array.from({length:count},(_,i)=>({id:`l${String(i).padStart(4,'0')}`,machine_id:id,part_id:`p${i+1}`,lifespan_override_days:null,schedule_disabled:false,next_due_date:i===0?'2026-10-29':null,
+ const dueDates={0:'2026-10-29',1:'2026-11-01',2:'2026-11-03',4:'2026-12-15',5:'2026-10-30',6:'2026-11-02'};
+ const links=Array.from({length:count},(_,i)=>({id:`l${String(i).padStart(4,'0')}`,machine_id:id,part_id:`p${i+1}`,lifespan_override_days:null,schedule_disabled:i===6,next_due_date:dueDates[i]??null,
    spare_parts:{...part,id:`p${i+1}`,part_code:`P${String(i+1).padStart(4,'0')}`,part_name:i%4===3?'ชุดอะไหล่สำหรับเครื่องจักรทดสอบการทำงานต่อเนื่องพร้อมอุปกรณ์ควบคุมและสายส่งสัญญาณระยะยาว':`อะไหล่ทดสอบลำดับ ${i+1}`,default_lifespan_days:i===1?null:365}}));
  return {machine:{...machine,install_date:installDate},links,
  replacements:[replacement,{...replacement,id:'r2',replaced_at:'2020-06-30',reason:'breakdown'},replacement,
@@ -106,11 +107,39 @@ try {
  assert.equal(await p1.locator('td').nth(3).textContent(),'○2'); // 2020, unique IDs despite duplicate fixture row.
  assert.equal(await p1.locator('td').nth(9).textContent(),'○'); // 2026.
  assert.equal(await appendix.getByText('Z-HISTORY',{exact:true}).count(),1);
- assert.equal(await appendix.getByText('ไม่กำหนดรอบ',{exact:true}).count(),1);
+ assert.equal(await appendix.getByText('ไม่กำหนดรอบ',{exact:true}).count(),2);
+ // Keep recommendation labels unchanged; render saved dates on a separate line
+ // for overdue, due-soon, normal and due-today schedules (including non-stock).
+ for(const [code,label,due] of [
+   ['P0001','แนะนำเปลี่ยน','29/10/2026'],
+   ['P0003','อีก 4 วัน','03/11/2026'],
+   ['P0005','ตามรอบ','15/12/2026'],
+   ['P0006','ครบกำหนดวันนี้','30/10/2026'],
+ ]){
+   const cell=appendix.locator('tbody tr').filter({hasText:code}).locator('td').last();
+   assert.equal(await cell.evaluate(el=>el.firstChild.textContent),label);
+   assert.equal(await cell.locator('.timeline-print-due-date').textContent(),`ครบกำหนด ${due}`);
+   assert.equal(await cell.locator('.timeline-print-due-date').evaluate(el=>getComputedStyle(el).display),'block');
+ }
+ for(const [code,label] of [['P0002','ไม่กำหนดรอบ'],['P0007','ไม่กำหนดรอบ'],['P0008','ยังไม่มีวันครบกำหนด'],['Z-HISTORY','ไม่ได้ผูกกับเครื่องแล้ว']]){
+   const cell=appendix.locator('tbody tr').filter({hasText:code}).locator('td').last();
+   assert.equal(await cell.textContent(),label);
+   assert.equal(await cell.locator('.timeline-print-due-date').count(),0);
+ }
  const totalRow=page.getByText('ต้นทุนบำรุงรักษารวม',{exact:true}).locator('..');assert.ok((await totalRow.textContent()).includes('175.00'));
  const last=await verifyOnePage(page,'representative-12',Array.from({length:10},(_,i)=>2017+i));
  assert.ok(last.text.includes('○'));assert.ok(last.text.includes('P0012'));assert.ok(last.text.includes('Z-HISTORY'));
+ for(const due of ['29/10/2026','03/11/2026','15/12/2026','30/10/2026'])assert.ok(last.text.replace(/\s/g,'').includes(`ครบกำหนด${due}`));
+ for(const hiddenDate of ['01/11/2026','02/11/2026'])assert.ok(!last.text.includes(hiddenDate));
  await printButton(page).click();assert.equal(await page.evaluate(()=>window.__printCalls),1);
+ assert.equal(await page.evaluate(()=>window.__db.writes),0);await page.context().close();
+ // A full standard-sized matrix with a saved due date on every linked part
+ // still adds only one page, with the original report sections unchanged.
+ const scheduled=fixture();
+ for(const link of scheduled.links){link.schedule_disabled=false;link.spare_parts.default_lifespan_days=365;link.next_due_date='2026-12-15';}
+ page=await open(scheduled);await ready(page);
+ const scheduledPdf=await verifyOnePage(page,'all-scheduled-12',Array.from({length:10},(_,i)=>2017+i));
+ assert.equal((scheduledPdf.text.replace(/\s/g,'').match(/ครบกำหนด15\/12\/2026/g)||[]).length,12);
  assert.equal(await page.evaluate(()=>window.__db.writes),0);await page.context().close();
  for(const [name,count,installed,years] of [
    ['compact-24',24,'1998-04-30',Array.from({length:10},(_,i)=>2017+i)],
