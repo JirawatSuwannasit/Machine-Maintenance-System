@@ -68,8 +68,9 @@ export default function PartsReplacementTimelinePrint({ machine, links, replacem
         .parts-timeline-print-page .timeline-print-part { text-align: left; font-weight: 400; }
         .parts-timeline-print-page .timeline-print-marker { font: 12pt/1 Arial, sans-serif; }
         .parts-timeline-print-page .timeline-print-count { font-size: 8pt; margin-left: 1mm; }
+        .parts-timeline-print-page .timeline-print-due-date { display: block; white-space: nowrap; font-variant-numeric: tabular-nums; }
         .parts-timeline-print-page .timeline-print-legend { font-size: 8pt; margin-top: 2mm; }
-        .timeline-print-compact { font-size: 8pt; line-height: 1.35; }
+        .timeline-print-compact { font-size: 8pt; line-height: 1.2; }
         .timeline-print-compact th, .timeline-print-compact td { padding: 0.25mm 1mm; }
         @media screen {
           .parts-timeline-print-page { position: fixed; left: -10000px; top: 0; width: 273mm; visibility: hidden; }
@@ -100,7 +101,10 @@ export default function PartsReplacementTimelinePrint({ machine, links, replacem
                 const count = row.byYear.get(year)?.length ?? 0;
                 return <td key={year} className="timeline-print-year">{count > 0 && <><span className="timeline-print-marker">○</span>{count > 1 && <span className="timeline-print-count">{count}</span>}</>}</td>;
               })}
-              <td>{timelineRecommendation(row, generatedAt).label}</td>
+              <td>
+                {timelineRecommendation(row, generatedAt).label}
+                {row.link?.next_due_date && !row.link.schedule_disabled && (row.link.lifespan_override_days ?? row.part?.default_lifespan_days) != null && <span className="timeline-print-due-date">ครบกำหนด {formatDateThai(row.link.next_due_date)}</span>}
+              </td>
             </tr>)}
           </tbody>
         </table>
