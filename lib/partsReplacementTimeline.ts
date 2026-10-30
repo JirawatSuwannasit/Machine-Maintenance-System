@@ -2,6 +2,12 @@ import { DUE_SOON_DAYS } from "@/lib/machineStatus";
 import { computeDueDiffDays, computeDueDisplay, type DueDisplay } from "@/lib/pmDueDate";
 
 export const TIMELINE_WINDOW_YEARS = 11;
+export const MAX_TIMELINE_YEARS = 30;
+
+export function defaultTimelineRange(now: Date = new Date()) {
+  const startYear = now.getFullYear() - 9;
+  return { startYear, endYear: startYear + TIMELINE_WINDOW_YEARS - 1 };
+}
 
 export type TimelinePart = {
   part_code: string;
@@ -39,8 +45,35 @@ export function localCalendarDate(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-export function timelineYears(startYear: number): number[] {
-  return Array.from({ length: TIMELINE_WINDOW_YEARS }, (_, i) => startYear + i);
+export function validateTimelineRange(start: string, end: string): string | null {
+  if (![start, end].every((year) => /^\d+$/.test(year) && Number(year) >= 1 && Number(year) <= 9999)) {
+    return "กรุณาระบุปี ค.ศ. เป็นจำนวนเต็มระหว่าง 1–9999 ทั้งสองช่อง";
+  }
+  if (Number(end) < Number(start)) return "ปีสิ้นสุดต้องไม่น้อยกว่าปีเริ่มต้น";
+  if (Number(end) - Number(start) + 1 > MAX_TIMELINE_YEARS) return "เลือกช่วงปีได้ไม่เกิน 30 ปี";
+  return null;
+}
+
+export function timelineYears(startYear: number, endYear: number): number[] {
+  if (validateTimelineRange(String(startYear), String(endYear))) return [];
+  return Array.from({ length: endYear - startYear + 1 }, (_, i) => startYear + i);
+}
+
+export type TimelineVisibility = { machineId: string; hiddenPartIds: Set<string> };
+
+// Keep opt-outs for surviving IDs on reload; new parts default to selected.
+// A different machine always starts with all its own parts selected.
+export function reconcileTimelineVisibility(
+  previous: TimelineVisibility,
+  machineId: string,
+  availableIds: Iterable<string>
+): TimelineVisibility {
+  const available = new Set(availableIds);
+  return {
+    machineId,
+    hiddenPartIds: new Set(previous.machineId === machineId
+      ? Array.from(previous.hiddenPartIds).filter((id) => available.has(id)) : []),
+  };
 }
 
 // Both database values are DATEs, not instants. At Dec 31 the installation

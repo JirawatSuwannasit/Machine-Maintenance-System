@@ -18,7 +18,7 @@ function load(path) {
   ) });
   return exports;
 }
-const { systemYears, timelineYears, localCalendarDate, buildTimelineRows, timelineRecommendation } = load('lib/partsReplacementTimeline.ts');
+const { systemYears, timelineYears, localCalendarDate, buildTimelineRows, timelineRecommendation, defaultTimelineRange, validateTimelineRange, reconcileTimelineVisibility } = load('lib/partsReplacementTimeline.ts');
 let assertions = 0;
 function equal(actual, expected) { assert.equal(actual, expected); assertions++; }
 const originalTz = process.env.TZ;
@@ -29,7 +29,8 @@ try {
     equal(systemYears(null,2026),null);
     equal(systemYears('2000-02-29',2026),26);
     equal(localCalendarDate(new Date(2026,0,1,0,5)),'2026-01-01');
-    const years=timelineYears(new Date(2026,9,30).getFullYear()-9);
+    const range=defaultTimelineRange(new Date(2026,9,30));
+    const years=timelineYears(range.startYear,range.endYear);
     equal(years.length,11); equal(years[0],2017); equal(years[10],2027);
   }
 } finally { if (originalTz===undefined) delete process.env.TZ; else process.env.TZ=originalTz; }
@@ -59,4 +60,23 @@ equal(recommend({schedule_disabled:true}).label,'ไม่กำหนดรอ�
 equal(recommend({}, {default_lifespan_days:null}).label,'ไม่กำหนดรอบ');
 equal(recommend({lifespan_override_days:7}, {default_lifespan_days:null}).label,'แนะนำเปลี่ยน');
 equal(timelineRecommendation(rows[2],now).label,'ไม่ได้ผูกกับเครื่องแล้ว');
-console.log(`PASS: ${assertions} assertions covering calendar ages, grouping/deduplication, real due dates and non-stock schedules.`);
+for (const [start,end,length] of [[2010,2026,17],[2024,2026,3],[2000,2029,30],[2024,2024,1],[1998,2026,29]]) {
+  equal(validateTimelineRange(String(start),String(end)),null);
+  const years=timelineYears(start,end);
+  equal(years.length,length);equal(years[0],start);equal(years[length-1],end);
+  equal(systemYears('1998-04-30',years[0]),start-1998);
+}
+for (const [start,end] of [['','2026'],['2024',''],['2027','2026'],['2000','2030'],['2024.5','2026'],['abc','2026'],['-1','2026'],['2024','10000'],['2024','Infinity'],['1e3','1020']]) {
+  equal(typeof validateTimelineRange(start,end),'string');
+}
+equal(timelineYears(2000,2030).length,0);equal(timelineYears(2026,2024).length,0);
+const previous={machineId:'machine-one',hiddenPartIds:new Set(['p1','removed'])};
+const refreshed=reconcileTimelineVisibility(previous,'machine-one',['p1','p2','new-part']);
+equal(refreshed.hiddenPartIds.has('p1'),true);
+equal(refreshed.hiddenPartIds.has('p2'),false);
+equal(refreshed.hiddenPartIds.has('new-part'),false);
+equal(refreshed.hiddenPartIds.has('removed'),false);
+equal(previous.hiddenPartIds.has('removed'),true); // Reconciliation does not mutate the previous state.
+const changedMachine=reconcileTimelineVisibility(previous,'machine-two',['p1','new-part']);
+equal(changedMachine.hiddenPartIds.size,0);equal(changedMachine.machineId,'machine-two');
+console.log(`PASS: ${assertions} assertions covering calendar ages, grouping/deduplication, real due dates, custom ranges and selection reconciliation.`);
