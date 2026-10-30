@@ -5,14 +5,15 @@ import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { fetchPartsReplacementTimeline } from "@/lib/fetchPartsReplacementTimeline";
 import {
   buildTimelineRows, localCalendarDate, systemYears, timelineRecommendation, timelineYears,
-  TIMELINE_WINDOW_YEARS, type TimelineLink, type TimelineReplacement,
+  defaultTimelineRange, validateTimelineRange, reconcileTimelineVisibility,
+  type TimelineVisibility, type TimelineLink, type TimelineReplacement,
 } from "@/lib/partsReplacementTimeline";
 import { formatDateThai } from "@/lib/pmDueDate";
 
 type LoadState =
   | { status: "loading" }
   | { status: "error" }
-  | { status: "loaded"; links: TimelineLink[]; replacements: TimelineReplacement[] };
+  | { status: "loaded"; machineId: string; links: TimelineLink[]; replacements: TimelineReplacement[] };
 
 function money(value: number | string): string {
   return Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -26,28 +27,85 @@ export default function PartsReplacementTimeline({ machineId, installDate }: {
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [retry, setRetry] = useState(0);
-  const [startYear, setStartYear] = useState(() => new Date().getFullYear() - 9);
+  const [range, setRange] = useState(() => defaultTimelineRange());
+  const [yearInputs, setYearInputs] = useState(() => ({
+    start: String(range.startYear), end: String(range.endYear),
+  }));
+  const [visibility, setVisibility] = useState<TimelineVisibility>(() => ({ machineId, hiddenPartIds: new Set() }));
+  const [showPartPicker, setShowPartPicker] = useState(false);
+  const [partSearch, setPartSearch] = useState("");
   const [selection, setSelection] = useState<{ partId: string; year: number } | null>(null);
   const detailsId = useId();
+  const pickerId = useId();
+  const rangeErrorId = useId();
+  const startInputId = useId();
+  const endInputId = useId();
+  const searchInputId = useId();
   const today = localCalendarDate(new Date());
-  const years = timelineYears(startYear);
-  const rows = useMemo(() => state.status === "loaded"
-    ? buildTimelineRows(state.links, state.replacements, today) : [], [state, today]);
-  const selectedRow = rows.find((row) => row.partId === selection?.partId);
+  const { startYear, endYear } = range;
+  const rangeError = validateTimelineRange(yearInputs.start, yearInputs.end);
+  const years = timelineYears(startYear, endYear);
+  const rows = useMemo(() => state.status === "loaded" && state.machineId === machineId
+    ? buildTimelineRows(state.links, state.replacements, today) : [], [state, today, machineId]);
+  const hiddenIds = visibility.machineId === machineId ? visibility.hiddenPartIds : new Set<string>();
+  const visibleRows = rows.filter((row) => !hiddenIds.has(row.partId));
+  const search = partSearch.trim().toLocaleLowerCase();
+  const matchingOptions = rows.filter((row) =>
+    `${row.part?.part_code ?? ""} ${row.part?.part_name ?? ""}`.toLocaleLowerCase().includes(search)
+  );
+  const selectedRow = visibleRows.find((row) => row.partId === selection?.partId);
   const selectedEntries = selection ? selectedRow?.byYear.get(selection.year) ?? [] : [];
+
+  useEffect(() => {
+    setVisibility({ machineId, hiddenPartIds: new Set() });
+    setPartSearch("");
+    setShowPartPicker(false);
+  }, [machineId]);
 
   useEffect(() => {
     const controller = new AbortController();
     setState({ status: "loading" });
     setSelection(null);
     fetchPartsReplacementTimeline(machineId, controller.signal)
-      .then((data) => { if (!controller.signal.aborted) setState({ status: "loaded", ...data }); })
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        const partIds = [...data.links, ...data.replacements].map((row) => row.part_id);
+        setVisibility((previous) => reconcileTimelineVisibility(previous, machineId, partIds));
+        setState({ status: "loaded", machineId, ...data });
+      })
       .catch(() => { if (!controller.signal.aborted) setState({ status: "error" }); });
     return () => controller.abort();
   }, [machineId, retry]);
 
-  function moveWindow(change: number) {
-    setStartYear((year) => year + change);
+  function applyRange(start: number, end: number) {
+    setRange({ startYear: start, endYear: end });
+    setYearInputs({ start: String(start), end: String(end) });
+    setSelection((current) => current && (current.year < start || current.year > end) ? null : current);
+  }
+
+  function changeYear(field: "start" | "end", value: string) {
+    const inputs = { ...yearInputs, [field]: value };
+    setYearInputs(inputs);
+    // Keep the last valid table visible while the user clears/types a field.
+    // Do not replace an invalid entry or reset any parts selections.
+    if (!validateTimelineRange(inputs.start, inputs.end)) {
+      setRange({ startYear: Number(inputs.start), endYear: Number(inputs.end) });
+      setSelection((current) => current && (current.year < Number(inputs.start) || current.year > Number(inputs.end)) ? null : current);
+    }
+  }
+
+  function togglePart(partId: string) {
+    const hiddenPartIds = new Set(hiddenIds);
+    if (hiddenPartIds.has(partId)) hiddenPartIds.delete(partId);
+    else {
+      hiddenPartIds.add(partId);
+      setSelection((current) => current?.partId === partId ? null : current);
+    }
+    setVisibility({ machineId, hiddenPartIds });
+  }
+
+  function clearParts() {
+    setVisibility({ machineId, hiddenPartIds: new Set(rows.map((row) => row.partId)) });
     setSelection(null);
   }
 
@@ -74,17 +132,69 @@ export default function PartsReplacementTimeline({ machineId, installDate }: {
       {rows.length === 0 ? (
         <p className="rounded-lg border border-primary/10 bg-surface p-6 text-center text-sm text-primary/60">เครื่องนี้ยังไม่มีอะไหล่ที่ผูกไว้หรือประวัติการเปลี่ยนอะไหล่</p>
       ) : <>
-        <div className="flex flex-wrap items-center justify-between gap-2" aria-label="เลือกช่วงปี">
-          <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={() => moveWindow(-TIMELINE_WINDOW_YEARS)} className={controlClass} aria-label="ช่วงปีก่อนหน้า"><ChevronLeft size={16} aria-hidden="true" />ก่อนหน้า</button>
-          <span aria-live="polite" className="text-sm font-semibold tabular-nums">{startYear}–{startYear + TIMELINE_WINDOW_YEARS - 1}</span>
-          <button type="button" onClick={() => moveWindow(TIMELINE_WINDOW_YEARS)} className={controlClass} aria-label="ช่วงปีถัดไป">ถัดไป<ChevronRight size={16} aria-hidden="true" /></button>
+        <div className="space-y-3 rounded-lg border border-primary/10 bg-surface/50 p-3">
+          <div className="grid grid-cols-2 gap-3 sm:max-w-sm">
+            <div className="min-w-0">
+              <label htmlFor={startInputId} className="block text-sm font-medium">ปีเริ่มต้น</label>
+              <input id={startInputId} type="number" min="1" max="9999" step="1" inputMode="numeric"
+                value={yearInputs.start} onChange={(event) => changeYear("start", event.target.value)}
+                aria-invalid={Boolean(rangeError)} aria-describedby={rangeErrorId}
+                className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-primary/20 bg-white px-3 py-2 text-sm focus:border-accent focus:outline-accent" />
+            </div>
+            <div className="min-w-0">
+              <label htmlFor={endInputId} className="block text-sm font-medium">ปีสิ้นสุด</label>
+              <input id={endInputId} type="number" min="1" max="9999" step="1" inputMode="numeric"
+                value={yearInputs.end} onChange={(event) => changeYear("end", event.target.value)}
+                aria-invalid={Boolean(rangeError)} aria-describedby={rangeErrorId}
+                className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-primary/20 bg-white px-3 py-2 text-sm focus:border-accent focus:outline-accent" />
+            </div>
           </div>
-          <button type="button" onClick={() => { setStartYear(new Date().getFullYear() - 9); setSelection(null); }} className="min-h-[44px] px-2 text-sm font-medium text-accent">กลับช่วงปีปัจจุบัน</button>
+          <p id={rangeErrorId} role={rangeError ? "alert" : undefined} className={`text-xs leading-5 ${rangeError ? "text-red-700" : "text-primary/60"}`}>
+            {rangeError ? `${rangeError} · ตารางยังแสดงช่วงปีล่าสุดที่ถูกต้อง` : "ระบุปี ค.ศ. ได้ครั้งละ 1–30 ปี รวมปีเริ่มต้นและปีสิ้นสุด"}
+          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2" aria-label="เลือกช่วงปี">
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" onClick={() => applyRange(startYear - years.length, endYear - years.length)}
+                disabled={Boolean(rangeError) || startYear - years.length < 1}
+                className={`${controlClass} disabled:cursor-not-allowed disabled:opacity-50`} aria-label="ช่วงปีก่อนหน้า"><ChevronLeft size={16} aria-hidden="true" />ก่อนหน้า</button>
+              <span aria-live="polite" className="text-sm font-semibold tabular-nums">{startYear}–{endYear}</span>
+              <button type="button" onClick={() => applyRange(startYear + years.length, endYear + years.length)}
+                disabled={Boolean(rangeError) || endYear + years.length > 9999}
+                className={`${controlClass} disabled:cursor-not-allowed disabled:opacity-50`} aria-label="ช่วงปีถัดไป">ถัดไป<ChevronRight size={16} aria-hidden="true" /></button>
+            </div>
+            <button type="button" onClick={() => { const current = defaultTimelineRange(); applyRange(current.startYear, current.endYear); }} className="min-h-[44px] px-2 text-sm font-medium text-accent">กลับช่วงปีปัจจุบัน</button>
+          </div>
         </div>
+        <div className="rounded-lg border border-primary/10 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <button type="button" onClick={() => setShowPartPicker((open) => !open)} aria-expanded={showPartPicker} aria-controls={pickerId}
+              className={controlClass}>เลือกอะไหล่ที่แสดง</button>
+            <p aria-live="polite" className="text-sm text-primary/70">เลือกแล้ว {visibleRows.length} / {rows.length} รายการ</p>
+          </div>
+          {showPartPicker && <div id={pickerId} className="mt-3 space-y-3">
+            <div>
+              <label htmlFor={searchInputId} className="block text-sm font-medium">ค้นหารหัสหรือชื่ออะไหล่</label>
+              <input id={searchInputId} type="search" value={partSearch} onChange={(event) => setPartSearch(event.target.value)}
+                className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-primary/20 px-3 py-2 text-sm focus:border-accent focus:outline-accent" />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => setVisibility({ machineId, hiddenPartIds: new Set() })} className={controlClass}>เลือกทั้งหมด</button>
+              <button type="button" onClick={clearParts} className={controlClass}>ล้างการเลือก</button>
+            </div>
+            <div className="max-h-64 space-y-1 overflow-y-auto" role="group" aria-label="อะไหล่ที่แสดงในตาราง">
+              {matchingOptions.length === 0 ? <p className="p-2 text-sm text-primary/60">ไม่พบอะไหล่ที่ตรงกับคำค้น</p> : matchingOptions.map((row) => (
+                <label key={row.partId} className="flex min-h-[44px] cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-surface">
+                  <input type="checkbox" checked={!hiddenIds.has(row.partId)} onChange={() => togglePart(row.partId)} className="mt-1 h-5 w-5 shrink-0 accent-accent" />
+                  <span className="min-w-0 break-words text-sm"><span className="font-semibold">{row.part?.part_code ?? "-"}</span> — {row.part?.part_name ?? "ไม่พบข้อมูลอะไหล่"}</span>
+                </label>
+              ))}
+            </div>
+          </div>}
+        </div>
+        {visibleRows.length === 0 && <p className="rounded-md bg-surface p-3 text-sm text-primary/60">ยังไม่ได้เลือกอะไหล่ กรุณาเลือกอะไหล่ที่ต้องการแสดง</p>}
         <div role="region" aria-label="ตารางประวัติการเปลี่ยนอะไหล่" tabIndex={0} className="max-h-[70vh] w-full max-w-full overflow-auto rounded-lg border border-primary/15 focus-visible:outline-accent">
-          <table className="w-full min-w-[1040px] table-fixed border-separate border-spacing-0 text-sm">
-            <caption className="sr-only">ตารางเปลี่ยนอะไหล่ ปี {startYear} ถึง {startYear + TIMELINE_WINDOW_YEARS - 1} อายุเครื่อง ณ วันที่ 31 ธันวาคมของแต่ละปี</caption>
+          <table style={{ minWidth: 160 + years.length * 64 + 176 }} className="w-full table-fixed border-separate border-spacing-0 text-sm">
+            <caption className="sr-only">ตารางเปลี่ยนอะไหล่ ปี {startYear} ถึง {endYear} อายุเครื่อง ณ วันที่ 31 ธันวาคมของแต่ละปี</caption>
             <colgroup><col className="w-40" />{years.map((year) => <col key={year} className="w-16" />)}<col className="w-44" /></colgroup>
             <thead>
               <tr>
@@ -99,7 +209,7 @@ export default function PartsReplacementTimeline({ machineId, installDate }: {
                 {years.map((year) => <td key={year} className="border-b border-r border-primary/15 bg-blue-50 p-2 text-center tabular-nums">{systemYears(installDate, year) ?? "-"}</td>)}
                 <td className="border-b border-primary/15 bg-blue-50 px-3 text-xs text-primary/60">นับจากวันที่ติดตั้ง</td>
               </tr>
-              {rows.map((row, index) => {
+              {visibleRows.map((row, index) => {
                 const background = index % 2 ? "bg-slate-50" : "bg-white";
                 const recommendation = timelineRecommendation(row);
                 return <tr key={row.partId}>
@@ -132,7 +242,7 @@ export default function PartsReplacementTimeline({ machineId, installDate }: {
           </table>
         </div>
         <p className="text-xs leading-5 text-primary/60">○ มีการเปลี่ยนอะไหล่จริง · ตัวเลขใต้เครื่องหมายคือจำนวนรายการ · แสดงประวัติถึงวันนี้เท่านั้น · คำแนะนำอ้างอิงรอบปัจจุบัน ไม่ขึ้นกับช่วงปีที่เลือก</p>
-        {!rows.some((row) => row.byYear.size > 0) && <p className="rounded-md bg-surface p-3 text-sm text-primary/60">ยังไม่มีประวัติการเปลี่ยนอะไหล่ที่เกิดขึ้นแล้ว</p>}
+        {visibleRows.length > 0 && !rows.some((row) => row.byYear.size > 0) && <p className="rounded-md bg-surface p-3 text-sm text-primary/60">ยังไม่มีประวัติการเปลี่ยนอะไหล่ที่เกิดขึ้นแล้ว</p>}
         <section id={detailsId} aria-label="รายละเอียดการเปลี่ยนอะไหล่" className={selection && selectedEntries.length ? "rounded-lg border border-accent/20 bg-blue-50/40 p-3 sm:p-4" : "hidden"}>
           {selection && selectedRow && <>
             <div className="flex items-start justify-between gap-2">
