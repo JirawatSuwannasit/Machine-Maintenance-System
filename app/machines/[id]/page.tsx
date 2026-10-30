@@ -16,6 +16,7 @@ import type { MachineRecord } from "@/components/machine/MachineForm";
 import BreakdownHistoryTab from "@/components/machine/BreakdownHistoryTab";
 import PmHistoryTab from "@/components/machine/PmHistoryTab";
 import PartsTab from "@/components/machine/PartsTab";
+import PartsReplacementTimeline from "@/components/machine/PartsReplacementTimeline";
 import { canWorkOnLocation, useAccess } from "@/components/AccessContext";
 
 const UUID_REGEX =
@@ -33,12 +34,13 @@ type LoadState =
   | { status: "error"; message: string }
   | { status: "loaded"; machine: MachineRecord; computedStatus: MachineStatus };
 
-type TabKey = "breakdowns" | "pm" | "parts";
+type TabKey = "breakdowns" | "pm" | "parts" | "replacement_matrix";
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "breakdowns", label: "ประวัติเสีย" },
   { key: "pm", label: "ประวัติ PM" },
   { key: "parts", label: "อะไหล่" },
+  { key: "replacement_matrix", label: "ตารางเปลี่ยนอะไหล่" },
 ];
 
 function displayValue(value: string | null | undefined): string {
@@ -69,7 +71,7 @@ export default function MachineProfilePage() {
   const searchParams = useSearchParams();
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [activeTab, setActiveTab] = useState<TabKey>(
-    searchParams.get("tab") === "pm" ? "pm" : "breakdowns"
+    () => TABS.find((tab) => tab.key === searchParams.get("tab"))?.key ?? "breakdowns"
   );
 
   useEffect(() => {
@@ -192,9 +194,7 @@ export default function MachineProfilePage() {
 
       {state.status === "error" && (
         <div className="mt-6 rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-800">
-          <pre className="whitespace-pre-wrap break-all font-mono text-xs">
-            {state.message}
-          </pre>
+          ไม่สามารถโหลดข้อมูลเครื่องจักรได้ กรุณาลองใหม่อีกครั้ง
         </div>
       )}
 
@@ -354,13 +354,13 @@ export default function MachineProfilePage() {
           </div>
 
           <div className="mt-4">
-            <div className="flex gap-1 border-b border-primary/10">
+            <div className="flex max-w-full gap-1 overflow-x-auto border-b border-primary/10">
               {TABS.map((tab) => (
                 <button
                   key={tab.key}
                   type="button"
                   onClick={() => setActiveTab(tab.key)}
-                  className={`min-h-[44px] flex-1 border-b-2 px-2 text-sm font-medium transition-colors sm:flex-none sm:px-4 ${
+                  className={`min-h-[44px] flex-1 shrink-0 whitespace-nowrap border-b-2 px-2 text-sm font-medium transition-colors sm:flex-none sm:px-4 ${
                     activeTab === tab.key
                       ? "border-accent text-accent"
                       : "border-transparent text-primary/60 hover:text-primary"
@@ -371,7 +371,7 @@ export default function MachineProfilePage() {
               ))}
             </div>
 
-            <div className="rounded-b-lg border border-t-0 border-primary/10 bg-white p-4">
+            <div className="min-w-0 rounded-b-lg border border-t-0 border-primary/10 bg-white p-4">
               {activeTab === "breakdowns" && (
                 <BreakdownHistoryTab machineId={state.machine.id} />
               )}
@@ -380,6 +380,13 @@ export default function MachineProfilePage() {
                   machineId={state.machine.id}
                   canWork={canWorkOnLocation(access, state.machine.location)}
                   isAdmin={access.role === "admin"}
+                />
+              )}
+              {activeTab === "replacement_matrix" && (
+                <PartsReplacementTimeline
+                  key={state.machine.id}
+                  machineId={state.machine.id}
+                  installDate={state.machine.install_date}
                 />
               )}
               {activeTab === "parts" && (

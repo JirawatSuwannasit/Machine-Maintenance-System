@@ -1,0 +1,62 @@
+// Run from the repository root: node scripts/check-parts-replacement-timeline.mjs
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import vm from 'node:vm';
+import ts from 'typescript';
+const cache = new Map();
+function load(path) {
+  const file = resolve(path);
+  if (cache.has(file)) return cache.get(file);
+  const exports = {};
+  cache.set(file, exports);
+  const { outputText } = ts.transpileModule(readFileSync(file, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+  });
+  vm.runInNewContext(outputText, { exports, Date, require: (name) => load(
+    (name.startsWith('@/') ? resolve(name.slice(2)) : resolve(dirname(file), name)) + '.ts'
+  ) });
+  return exports;
+}
+const { systemYears, timelineYears, localCalendarDate, buildTimelineRows, timelineRecommendation } = load('lib/partsReplacementTimeline.ts');
+let assertions = 0;
+function equal(actual, expected) { assert.equal(actual, expected); assertions++; }
+const originalTz = process.env.TZ;
+try {
+  for (const timezone of ['UTC', 'Asia/Bangkok', 'America/Los_Angeles']) {
+    process.env.TZ = timezone;
+    for (const [year, age] of [[1997,null],[1998,0],[1999,1],[2024,26],[2025,27],[2026,28],[2027,29]]) equal(systemYears('1998-04-30',year),age);
+    equal(systemYears(null,2026),null);
+    equal(systemYears('2000-02-29',2026),26);
+    equal(localCalendarDate(new Date(2026,0,1,0,5)),'2026-01-01');
+    const years=timelineYears(new Date(2026,9,30).getFullYear()-9);
+    equal(years.length,11); equal(years[0],2017); equal(years[10],2027);
+  }
+} finally { if (originalTz===undefined) delete process.env.TZ; else process.env.TZ=originalTz; }
+const part = {part_code:'P1',part_name:'Part one',default_lifespan_days:365,stock_tracking_enabled:false};
+const link = {id:'l1',part_id:'p1',next_due_date:'2026-10-29',lifespan_override_days:null,schedule_disabled:false,spare_parts:part};
+const replacement = {id:'r1',part_id:'p1',replaced_at:'2024-01-01',qty_used:2,unit_cost:'12.50',total_cost:'25.00',reason:'planned',replaced_by:'Tester',spare_parts:[part]};
+const rows = buildTimelineRows([
+  link, {...link,id:'l2',part_id:'p2',spare_parts:{...part,part_code:'P2'},last_replaced_at:'2024-01-01'},
+], [replacement,replacement,{...replacement,id:'r2',replaced_at:'2024-12-31'},
+  {...replacement,id:'r3',part_id:'p3',replaced_at:'2025-01-01',spare_parts:{...part,part_code:'P3'}},
+  {...replacement,id:'future1',replaced_at:'2027-01-01'}, {...replacement,id:'future2',replaced_at:'2026-12-31'}], '2026-10-30');
+equal(rows.length,3);
+equal(rows[0].byYear.get(2024).length,2);
+equal(rows[0].byYear.get(2024)[0].id,'r2');
+equal(rows[0].byYear.has(2023),false); equal(rows[0].byYear.has(2026),false); equal(rows[0].byYear.has(2027),false);
+equal(rows[1].byYear.size,0); // A link/last_replaced_at never creates history.
+equal(rows[2].link,null); equal(rows[2].byYear.get(2025)[0].id,'r3');
+const now=new Date(2026,9,30,12);
+const recommend=(changes={},partChanges={})=>timelineRecommendation({...rows[0],part:{...part,...partChanges},link:{...link,...changes}},now);
+equal(recommend().label,'แนะนำเปลี่ยน');
+equal(recommend().className.includes('red'),true);
+equal(recommend({next_due_date:'2026-10-30'}).label,'ครบกำหนดวันนี้');
+equal(recommend({next_due_date:'2026-11-06'}).label,'อีก 7 วัน');
+equal(recommend({next_due_date:'2026-11-07'}).label,'ตามรอบ');
+equal(recommend({next_due_date:null}).label,'ยังไม่มีวันครบกำหนด');
+equal(recommend({schedule_disabled:true}).label,'ไม่กำหนดรอบ');
+equal(recommend({}, {default_lifespan_days:null}).label,'ไม่กำหนดรอบ');
+equal(recommend({lifespan_override_days:7}, {default_lifespan_days:null}).label,'แนะนำเปลี่ยน');
+equal(timelineRecommendation(rows[2],now).label,'ไม่ได้ผูกกับเครื่องแล้ว');
+console.log(`PASS: ${assertions} assertions covering calendar ages, grouping/deduplication, real due dates and non-stock schedules.`);

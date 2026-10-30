@@ -1,0 +1,111 @@
+import { DUE_SOON_DAYS } from "@/lib/machineStatus";
+import { computeDueDiffDays, computeDueDisplay, type DueDisplay } from "@/lib/pmDueDate";
+
+export const TIMELINE_WINDOW_YEARS = 11;
+
+export type TimelinePart = {
+  part_code: string;
+  part_name: string;
+  default_lifespan_days: number | null;
+  stock_tracking_enabled: boolean;
+};
+export type TimelineLink = {
+  id: string;
+  part_id: string;
+  next_due_date: string | null;
+  lifespan_override_days: number | null;
+  schedule_disabled: boolean;
+  spare_parts: TimelinePart | TimelinePart[] | null;
+};
+export type TimelineReplacement = {
+  id: string;
+  part_id: string;
+  replaced_at: string;
+  replaced_by: string | null;
+  qty_used: number;
+  unit_cost: number | string;
+  total_cost: number | string;
+  reason: string | null;
+  spare_parts: TimelinePart | TimelinePart[] | null;
+};
+export type TimelineRow = {
+  partId: string;
+  part: TimelinePart | null;
+  link: TimelineLink | null;
+  byYear: Map<number, TimelineReplacement[]>;
+};
+
+export function localCalendarDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+export function timelineYears(startYear: number): number[] {
+  return Array.from({ length: TIMELINE_WINDOW_YEARS }, (_, i) => startYear + i);
+}
+
+// Both database values are DATEs, not instants. At Dec 31 the installation
+// anniversary has passed, so completed years = column year - install year.
+export function systemYears(installDate: string | null, year: number): number | null {
+  if (!installDate) return null;
+  const installedYear = Number(installDate.slice(0, 4));
+  return Number.isInteger(installedYear) && installedYear > 0 && year >= installedYear
+    ? year - installedYear
+    : null;
+}
+
+function normalizePart(value: TimelineLink["spare_parts"]): TimelinePart | null {
+  return Array.isArray(value) ? value[0] ?? null : value;
+}
+
+export function buildTimelineRows(
+  links: TimelineLink[],
+  replacements: TimelineReplacement[],
+  today: string
+): TimelineRow[] {
+  const rows = new Map<string, TimelineRow>();
+  for (const link of links) {
+    rows.set(link.part_id, {
+      partId: link.part_id, part: normalizePart(link.spare_parts), link, byYear: new Map(),
+    });
+  }
+  const seenIds = new Set<string>();
+  for (const entry of replacements) {
+    if (seenIds.has(entry.id)) continue;
+    seenIds.add(entry.id);
+    let row = rows.get(entry.part_id);
+    if (!row) {
+      row = { partId: entry.part_id, part: normalizePart(entry.spare_parts), link: null, byYear: new Map() };
+      rows.set(entry.part_id, row);
+    }
+    row.part ??= normalizePart(entry.spare_parts);
+    // A future-dated record must never look like an already completed event.
+    // Compare DATE strings directly, avoiding UTC parsing/year-boundary shifts.
+    if (entry.replaced_at > today) continue;
+    const year = Number(entry.replaced_at.slice(0, 4));
+    const entries = row.byYear.get(year) ?? [];
+    entries.push(entry);
+    row.byYear.set(year, entries);
+  }
+  for (const row of rows.values()) {
+    for (const entries of row.byYear.values()) {
+      entries.sort((a, b) => b.replaced_at.localeCompare(a.replaced_at) || a.id.localeCompare(b.id));
+    }
+  }
+  return Array.from(rows.values()).sort((a, b) =>
+    (a.part?.part_code ?? a.partId).localeCompare(b.part?.part_code ?? b.partId, "th", { numeric: true })
+  );
+}
+
+const neutral = "border border-slate-200 bg-slate-100 text-slate-700";
+export function timelineRecommendation(row: TimelineRow, now: Date = new Date()): DueDisplay {
+  const link = row.link;
+  if (!link) return { label: "ไม่ได้ผูกกับเครื่องแล้ว", className: neutral };
+  const days = link.schedule_disabled ? null : link.lifespan_override_days ?? row.part?.default_lifespan_days ?? null;
+  if (days === null) return { label: "ไม่กำหนดรอบ", className: neutral };
+  if (!link.next_due_date) return { label: "ยังไม่มีวันครบกำหนด", className: neutral };
+  const display = computeDueDisplay(link.next_due_date, now);
+  const diff = computeDueDiffDays(link.next_due_date, now)!;
+  if (diff < 0) return { ...display, label: "แนะนำเปลี่ยน" };
+  // Reuse today's and due-soon labels/colours and the existing 7-day threshold.
+  return diff > DUE_SOON_DAYS ? { ...display, label: "ตามรอบ" } : display;
+}
