@@ -25,6 +25,13 @@ export default function PrintReportStyles() {
         #printable-report * {
           visibility: visible;
         }
+        /* Hover state can retain tooltip content. Remove the whole subtree so
+           the visibility rule above cannot expose its nested labels in print. */
+        #printable-report .recharts-tooltip-wrapper,
+        #printable-report .recharts-tooltip-cursor {
+          display: none !important;
+          visibility: hidden !important;
+        }
         #printable-report {
           position: absolute;
           left: 0;

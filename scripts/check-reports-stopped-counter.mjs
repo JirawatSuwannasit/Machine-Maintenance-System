@@ -2,6 +2,7 @@
 // npm install --prefix /tmp/mms039-tools --no-package-lock playwright esbuild
 // MMS039_TEST_TOOLS=/tmp/mms039-tools node scripts/check-reports-stopped-counter.mjs
 // Requires Chromium, Python PyMuPDF and pdftoppm. Artifacts: /tmp/mms039-reports.
+// MMS-040 hover/PDF regression artifacts: /tmp/mms040-tooltip-pdfs.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { readFileSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
@@ -17,13 +18,15 @@ const repo = process.cwd();
 const temp = mkdtempSync(join(tmpdir(), 'mms039-'));
 const artifacts = '/tmp/mms039-reports';
 mkdirSync(artifacts, { recursive: true });
+const tooltipArtifacts = '/tmp/mms040-tooltip-pdfs';
+mkdirSync(tooltipArtifacts, { recursive: true });
 const labels = ['จำนวนครั้งที่เสียทั้งหมด', 'จำนวนครั้งที่เครื่องหยุด', 'Downtime รวม', 'MTTR เฉลี่ย', 'ต้นทุนบำรุงรักษารวม'];
 const b = (id, date, impact = 'stopped', status = 'open', downtime = null, outcome = null) => ({
   id, machine_id: 'm1', reported_at: date, operating_impact: impact, status,
   downtime_minutes: downtime, closure_outcome: outcome, repair_cost: '100.00',
 });
 const fixture = {
-  machines: [{ id: 'm1', machine_code: 'TEST-01' }],
+  machines: [{ id: 'm1', machine_code: 'TH4' }],
   breakdowns: [
     b('open', '2026-11-10T00:00:00Z'),
     b('progress', '2026-11-10T08:00:00Z', 'stopped', 'in_progress', 0),
@@ -158,6 +161,65 @@ try {
   assert.equal(await page.locator('.recharts-wrapper').count(), 5, 'all existing charts rendered');
   execFileSync('pdftoppm', ['-f', '1', '-singlefile', '-scale-to', '1600', '-png', join(artifacts, 'five-card-report.pdf'), join(artifacts, 'pdf-first-page')], { stdio: 'pipe' });
   cases++;
+  // Keep the pointer over each real chart, then activate the existing print
+  // button via DOM click (Playwright.click would move the pointer away).
+  // page.pdf exercises Chromium's print rendering with the tooltip still active.
+  for (const [index, name] of ['breakdown', 'downtime', 'replacement-pie', 'machine-cost', 'monthly-cost'].entries()) {
+    await page.emulateMedia({ media: 'screen' });
+    const chart = page.locator('.recharts-wrapper').nth(index);
+    const tooltip = chart.locator('.recharts-tooltip-wrapper');
+    await chart.scrollIntoViewIfNeeded();
+    if (index === 1) {
+      const tick = chart.locator('.recharts-xAxis .recharts-cartesian-axis-tick').filter({ hasText: '09/2026' });
+      const labelBounds = await tick.boundingBox();
+      const chartBounds = await chart.boundingBox();
+      await page.mouse.move(labelBounds.x + labelBounds.width / 2, chartBounds.y + chartBounds.height / 2);
+    } else {
+      await chart.locator(index === 2 ? '.recharts-pie-sector path' : '.recharts-bar-rectangle path').first().hover();
+    }
+    await page.waitForFunction(i => document.querySelectorAll('.recharts-wrapper')[i].querySelector('.recharts-tooltip-wrapper').style.visibility === 'visible', index);
+    const tooltipText = await tooltip.textContent();
+    assert.ok(tooltipText.trim().length > 0, `${name}: real hover tooltip has content`);
+    if (index === 0) assert.ok(tooltipText.includes('TH4'));
+    if (index === 1) assert.ok(tooltipText.includes('09/2026'));
+    assert.equal(await tooltip.evaluate(el => getComputedStyle(el).display), 'block', `${name}: screen tooltip works`);
+    const cursor = chart.locator('.recharts-tooltip-cursor');
+    if (index !== 2) assert.ok(await cursor.count() > 0, `${name}: actual hover cursor DOM verified`);
+    const dataSelector = index === 2 ? '.recharts-pie-sector path' : '.recharts-bar-rectangle path';
+    const shapes = await chart.locator(dataSelector).evaluateAll(els => els.map(el => ({ d: el.getAttribute('d'), fill: el.getAttribute('fill') })));
+    await page.screenshot({ path: join(tooltipArtifacts, `${name}-screen-hover.png`), fullPage: true });
+    const callsBefore = await page.evaluate(() => window.__printCalls);
+    await page.getByRole('button', { name: '🖨 พิมพ์ / บันทึก PDF', exact: true }).evaluate(el => el.click());
+    assert.equal(await page.evaluate(() => window.__printCalls), callsBefore + 1);
+    assert.equal(await tooltip.evaluate(el => el.style.visibility), 'visible', `${name}: tooltip still active at print request`);
+    await page.emulateMedia({ media: 'print' });
+    await page.waitForTimeout(250); // existing print chart dimensions resize via ResizeObserver
+    assert.deepEqual(await tooltip.evaluate(el => ({ display: getComputedStyle(el).display, visibility: getComputedStyle(el).visibility })), { display: 'none', visibility: 'hidden' });
+    assert.ok((await cursor.evaluateAll(els => els.map(el => getComputedStyle(el).display))).every(display => display === 'none'));
+    const file = join(tooltipArtifacts, `${name}.pdf`);
+    await page.pdf({ path: file, preferCSSPageSize: true, printBackground: true, displayHeaderFooter: false });
+    const output = inspectPdf(file);
+    assert.deepEqual(output, printed, `${name}: exact PDF text, page count, orientation and bounds match the no-hover report`);
+    assert.ok(output.some(p => p.text.includes('TH4')), 'legitimate machine axis labels remain');
+    assert.ok(output.some(p => p.text.includes('09/2026')), 'legitimate month axis labels remain');
+    for (let p = 1; p <= output.length; p++) {
+      execFileSync('pdftoppm', ['-f', String(p), '-singlefile', '-scale-to', '1600', '-png', file, join(tooltipArtifacts, `${name}-page-${p}`)], { stdio: 'pipe' });
+    }
+    await page.emulateMedia({ media: 'screen' });
+    await page.waitForTimeout(250);
+    // Restore hover after the print layout resize, proving the print-only rules
+    // did not disable normal tooltips or alter chart data/colors.
+    if (index === 1) {
+      const tickBounds = await chart.locator('.recharts-xAxis .recharts-cartesian-axis-tick').filter({ hasText: '09/2026' }).boundingBox();
+      const bounds = await chart.boundingBox();
+      await page.mouse.move(tickBounds.x + tickBounds.width / 2, bounds.y + bounds.height / 2);
+    } else await chart.locator(dataSelector).first().hover();
+    await page.waitForFunction(i => document.querySelectorAll('.recharts-wrapper')[i].querySelector('.recharts-tooltip-wrapper').style.visibility === 'visible', index);
+    assert.equal(await tooltip.evaluate(el => getComputedStyle(el).display), 'block');
+    assert.deepEqual(await chart.locator(dataSelector).evaluateAll(els => els.map(el => ({ d: el.getAttribute('d'), fill: el.getAttribute('fill') }))), shapes);
+    console.log(`PASS ${name}: actual hover DOM, print-button activation with pointer retained, clean ${output.length}-page PDF, screen tooltip restored.`);
+    cases++;
+  }
   assert.equal(await page.evaluate(() => window.__db.writes), 0);
   assert.deepEqual(errors, []);
   console.log(`PASS: ${cases} report/filter/layout/PDF scenarios; ${printed.length} A4 portrait pages with all five summary cards and six report sections. No writes. Artifacts: ${artifacts}`);
