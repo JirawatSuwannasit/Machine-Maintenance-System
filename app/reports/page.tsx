@@ -315,14 +315,16 @@ function StatTile({
   value,
   hint,
   children,
+  className = "",
 }: {
   label: string;
   value: string;
   hint?: string;
   children?: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="rounded-lg border border-primary/10 bg-white p-3 shadow-sm print:break-inside-avoid print:rounded-none print:border-black print:shadow-none sm:p-4">
+    <div className={`min-w-0 rounded-lg border border-primary/10 bg-white p-3 shadow-sm print:break-inside-avoid print:rounded-none print:border-black print:shadow-none sm:p-4 ${className}`}>
       <p className="text-xs text-primary/60 print:text-black">{label}</p>
       <p className="mt-1 text-lg font-bold text-primary print:text-black sm:text-xl">
         {value}
@@ -367,9 +369,9 @@ function ChartEmptyState() {
 function LoadingSkeleton() {
   return (
     <div className="mt-4 animate-pulse space-y-4 print:hidden">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <div key={index} className="h-20 rounded-lg bg-primary/10" />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div key={index} className={`h-20 rounded-lg bg-primary/10 ${index === 4 ? "col-span-2 xl:col-span-1" : ""}`} />
         ))}
       </div>
       <div className="h-72 rounded-lg bg-primary/10" />
@@ -570,6 +572,9 @@ export default function ReportsPage() {
   const summary = useMemo(() => {
     if (state.status !== "loaded") return null;
     const { breakdowns, replacements } = state.data;
+    const stoppedBreakdownCount = breakdowns.filter(
+      (b) => b.operating_impact === "stopped"
+    ).length;
     const cost = computeMaintenanceCost(breakdowns, pmRecordsInRange, replacements);
 
     const totalDowntimeMinutes = breakdowns.reduce(
@@ -595,6 +600,7 @@ export default function ReportsPage() {
 
     return {
       breakdownCount: breakdowns.length,
+      stoppedBreakdownCount,
       totalDowntimeMinutes,
       mttrHours,
       cost,
@@ -701,10 +707,15 @@ export default function ReportsPage() {
           </div>
 
           {/* Summary tiles */}
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5 print:break-inside-avoid print:grid-cols-3">
             <StatTile
               label="จำนวนครั้งที่เสียทั้งหมด"
               value={`${summary.breakdownCount} ครั้ง`}
+            />
+            <StatTile
+              label="จำนวนครั้งที่เครื่องหยุด"
+              value={`${summary.stoppedBreakdownCount} ครั้ง`}
+              hint="เฉพาะเครื่องหยุด / ใช้งานไม่ได้"
             />
             <StatTile
               label="Downtime รวม"
@@ -718,6 +729,7 @@ export default function ReportsPage() {
             <StatTile
               label="ต้นทุนบำรุงรักษารวม"
               value={formatMoneyThai(summary.cost.totalMaintenanceCost)}
+              className="col-span-2 xl:col-span-1 print:col-span-2"
             >
               <div className="mt-2 space-y-0.5 text-[11px] text-primary/60 print:text-black">
                 <div className="flex justify-between gap-2">
